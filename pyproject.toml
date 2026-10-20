@@ -1,0 +1,45 @@
+[project]
+name = "rig-assist"
+version = "0.1.0"
+description = "Multi-agent troubleshooting assistant for oil & gas equipment (RAG + CrewAI + FastAPI + Azure)"
+authors = [
+    { name = "Riz695", email = "rizqzuad@proton.me" }
+]
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pre-commit>=4.7.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.3,<0.14.0"]
+build-backend = "uv_build"
+
+# --- Tool configuration -------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Ruff also formats Python inside Markdown code blocks; docs like PLAN.md stay as written.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes (unused imports, undefined names), I: import sorting,
+# B: bugbear (likely bugs), UP: pyupgrade (modern syntax), SIM: simplifications.
+select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.mypy]
+# Lenient on purpose (see PLAN.md): check our code, don't fail on untyped third-party libs.
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
