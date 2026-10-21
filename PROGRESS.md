@@ -5,8 +5,8 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 0 (Scaffold): all tasks done, [PR #1](https://github.com/Riz695/rig-assist/pull/1) open, CI green, waiting for review/merge.
-- **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) (`docs/plan-v1-facts`) corrects the v1 description and adopts the pivot (OCR ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). Waiting for review/merge. Once merged, `PLAN.md` on `main` is the plan to follow.
+- **Current phase:** 0 (Scaffold): **done.** [PR #1](https://github.com/Riz695/rig-assist/pull/1) merged into `main` on 2026-10-21 (merged by Claude at the user's request, with a merge commit so the test-first history is kept).
+- **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21: v1 described accurately; pivot adopted (olmOCR 2 ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). `PLAN.md` on `main` is the plan to follow.
 - **Next:** Phase 1 (Port v1 + OCR ingestion + API + Docker), on branch `phase-1-api`. **The user wants to start Phase 1 in a new conversation.** Begin with the open blockers below.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
