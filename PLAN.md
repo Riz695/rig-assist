@@ -2,7 +2,13 @@
 
 A multi-agent troubleshooting assistant for oil & gas equipment. A technician describes a fault ("pump P-101 vibrating, discharge pressure dropping"); a team of agents retrieves relevant manual sections, diagnoses likely causes, checks safety, and returns a structured, cited work order through a REST API.
 
-This is v2 of my earlier project, a BM25 RAG over oil & gas manuals (`<LINK TO V1 REPO>`). v2 adds hybrid retrieval, measured evaluation, multi-agent orchestration, a documented REST API, Docker, CI/CD, and cloud deployment.
+This is v2 of my earlier project, [offshore-drilling-rag](https://github.com/Riz695/offshore-drilling-rag) (v1): a local hybrid RAG over the same manuals. v1 already has pypdf + pdfplumber parsing, ~500-token chunks, `bge-small-en-v1.5` embeddings in ChromaDB, BM25 fused with RRF, a citation check (every cited page must be a retrieved chunk), FastAPI + Ollama, a Streamlit UI, and a Hugging Face Space deployment.
+
+v2 does **not** claim those as new. What v2 adds over v1:
+- **Measured evaluation.** v1 has no eval set or metrics, and its relevance cut-off (`dense_score >= 0.6`) was picked from a few observed scores. v2 builds a frozen eval set and reports retrieval and answer metrics, **with v1's pipeline as the baseline**.
+- A cross-encoder reranker, compared against v1's hybrid setup on the same eval set.
+- Multi-agent orchestration with a safety agent that can block actions, returning a structured, cited work order.
+- An async job API, Docker, CI/CD, tracing, and Azure deployment.
 
 **Purpose:** portfolio project for ML/AI engineer roles. Code quality, clear README, and *measured results* matter more than feature count.
 
@@ -109,7 +115,7 @@ The GitHub remote is the backup. Push often, so nothing is lost if the session, 
 | API | FastAPI + Pydantic v2 | Swagger UI at `/docs` |
 | Chunking | `llama-index-core` only (node parsers) | Retrievers, fusion, and the Qdrant client are our own code, so the full LlamaIndex stack isn't needed |
 | PDF parsing | `pdfplumber` (MIT) or `pymupdf4llm` (AGPL); decide in Phase 1 | LlamaIndex's default reader (pypdf) garbles tables; LlamaParse is a paid cloud service |
-| BM25 | Port from v1 repo | Keep it as a baseline |
+| BM25 / chunking / RRF | Port from v1 repo (read critically, adapt, add the missing tests) | v1's pipeline is the eval baseline |
 | Embeddings | Local `BAAI/bge-small-en-v1.5` via `fastembed` (ONNX) | Free, CPU-only, no PyTorch, so the Docker image stays small and cold starts stay fast; swappable via config |
 | Reranker | Local cross-encoder `BAAI/bge-reranker-base` via `fastembed` | Optional toggle |
 | Vector DB | Qdrant (Docker locally; Qdrant Cloud free tier in prod) | Not a Container App on Azure Files: Qdrant warns against network filesystems (risk of corruption) |
@@ -223,7 +229,8 @@ rig-assist/
 - Ingestion: load PDF manuals and chunk them, keeping metadata `doc_id`, `doc_title`, `page`, `section` (when detectable). Handle tables sensibly, at minimum without garbling them.
   - Pick the PDF parser first: try `pdfplumber` and `pymupdf4llm` on a few real table pages from `data/raw/`, show me the output side by side, and record the choice (and the license tradeoff: MIT vs AGPL) in the README's design decisions.
   - Chunk with `llama-index-core` node parsers only; don't add other LlamaIndex packages unless there's a clear need.
-- Port the BM25 retriever from v1 and persist the index to `data/index/`.
+- Port the BM25 retriever from v1 (`src/rag/bm25_index.py`) and persist the index to `data/index/`. Port v1's chunking where it fits, keeping its metadata (`source_file`, `page_number`, `chunk_id`) mapped to v2's names.
+- `MarineOffshoreLogOpsManual.pdf` is a scan with no text layer (146 pages; v1 skipped it). Decide how to handle it in this phase.
 - Endpoints:
   - `POST /documents`: upload a PDF, ingest and index it, return `doc_id` and chunk count.
   - `GET /documents`: list indexed documents.
@@ -394,7 +401,7 @@ The README must contain, in this order:
 4. Quickstart (`docker compose up`)
 5. API overview, with a link to Swagger
 6. Design decisions and tradeoffs (why hybrid, why CrewAI, why a SQLite job store, what I'd change at scale)
-7. Link to the v1 repo and what changed
+7. Link to the v1 repo and what changed, stated honestly (v1 already had hybrid retrieval and citation checks; v2's gains are measured against it)
 8. Limitations and future work
 
 Also: a short demo video link (I'll record it), plus the repo description and topics on GitHub.
