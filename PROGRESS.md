@@ -6,11 +6,14 @@ Running log of what's done, so any new session (or person) can pick up where the
 ## Status
 
 - **Current phase:** 0 (Scaffold): all tasks done, [PR #1](https://github.com/Riz695/rig-assist/pull/1) open, CI green, waiting for review/merge.
-- **Next:** Phase 1 (Port v1 + API + Docker), on branch `phase-1-api`, once the Phase 0 PR is merged.
+- **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) (`docs/plan-v1-facts`) corrects the v1 description and adopts the pivot (OCR ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). Waiting for review/merge. Once merged, `PLAN.md` on `main` is the plan to follow.
+- **Next:** Phase 1 (Port v1 + OCR ingestion + API + Docker), on branch `phase-1-api`, once PR #1 and PR #2 are merged.
 - **Blockers for Phase 1:**
   - [ ] Docker Engine + compose plugin installed
-  - [ ] Manuals (PDFs) placed in `data/raw/`
-  - [ ] Link to the v1 repo (BM25 code to port); also replace `<LINK TO V1 REPO>` in `PLAN.md`
+  - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
+  - [x] v1 repo: https://github.com/Riz695/offshore-drilling-rag (linked in `PLAN.md` via PR #2)
+  - [ ] OCR API key (DeepInfra or similar for olmOCR 2, and/or Mistral) when Phase 1 reaches OCR
+  - [ ] `sbx` installed and logged in to Docker Agentic Platform, for long jobs
 
 ## Phase 0: Scaffold
 
@@ -38,6 +41,21 @@ Branch `phase-0-scaffold`. Acceptance: `make lint` + `make test` pass locally an
 - Ruff excludes `*.md` (it reformats Python inside Markdown code blocks, e.g. in `PLAN.md`).
 - `/health` is a liveness check only: it does not check Qdrant or the index.
 - CI actions are pinned to commit SHAs; uv pinned to `0.13.3`.
+- 2026-10-21: v1 already has hybrid BM25 + dense + RRF, citation checks, FastAPI, Streamlit, HF Space; it has **no eval and no OCR**. v2's README must not claim v1's features as new.
+- 2026-10-21: Pivot adopted (PR #2): A OCR ingestion (olmOCR 2 / Mistral OCR 3, via API: laptop has no NVIDIA GPU), B LangGraph instead of CrewAI, C fine-tuning the embedder (new Phase 5), D MLflow, E drop LlamaIndex. Phases renumbered 0–9 (deploy is now Phase 8).
+- 2026-10-21: Docker: install Docker Engine locally (not required to be Desktop). Cloud Sandboxes are CPU-only microVMs ($0.07–$1.12/h, ≤24 h sessions), used only for long CPU jobs.
+- Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
+
+## Docker Cloud Sandboxes credit
+
+Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any run estimated over $20.
+
+- Credit: $250 (Docker Agentic Platform signup promo). **Claim date: unknown, ask the user and fill in.** Credit expires 6 months after claiming.
+- Not yet verified: `sbx` on Linux, getting code/data in, secrets, Docker/compose inside, getting results out → `docs/cloud-jobs.md` (Phase 1).
+
+| Date | Job | Size | Hours | Cost | Credit left |
+|---|---|---|---|---|---|
+| | | | | | $250.00 |
 
 ## Pinned versions (as of Phase 0)
 
