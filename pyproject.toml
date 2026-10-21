@@ -6,7 +6,9 @@ authors = [
     { name = "Riz695", email = "rizqzuad@proton.me" }
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pydantic-settings>=2.16.1",
+]
 
 [dependency-groups]
 dev = [
@@ -32,6 +34,9 @@ extend-exclude = ["*.md"]
 # E/W: pycodestyle, F: pyflakes (unused imports, undefined names), I: import sorting,
 # B: bugbear (likely bugs), UP: pyupgrade (modern syntax), SIM: simplifications.
 select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rig_assist"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
