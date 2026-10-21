@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 0 (Scaffold): all tasks done, PR open, waiting for review/merge.
+- **Current phase:** 0 (Scaffold): all tasks done, [PR #1](https://github.com/Riz695/rig-assist/pull/1) open, CI green, waiting for review/merge.
 - **Next:** Phase 1 (Port v1 + API + Docker), on branch `phase-1-api`, once the Phase 0 PR is merged.
 - **Blockers for Phase 1:**
   - [ ] Docker Engine + compose plugin installed
