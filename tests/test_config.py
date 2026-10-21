@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -13,9 +14,9 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name.upper(), raising=False)
 
 
-def make_settings(**overrides: object) -> Settings:
+def make_settings(**overrides: Any) -> Settings:
     # _env_file=None: never read a developer's real .env during tests.
-    return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
+    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
 
 
 def test_defaults_run_offline() -> None:
