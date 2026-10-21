@@ -7,13 +7,13 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 - **Current phase:** 0 (Scaffold): all tasks done, [PR #1](https://github.com/Riz695/rig-assist/pull/1) open, CI green, waiting for review/merge.
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) (`docs/plan-v1-facts`) corrects the v1 description and adopts the pivot (OCR ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). Waiting for review/merge. Once merged, `PLAN.md` on `main` is the plan to follow.
-- **Next:** Phase 1 (Port v1 + OCR ingestion + API + Docker), on branch `phase-1-api`, once PR #1 and PR #2 are merged.
+- **Next:** Phase 1 (Port v1 + OCR ingestion + API + Docker), on branch `phase-1-api`. **The user wants to start Phase 1 in a new conversation.** Begin with the open blockers below.
 - **Blockers for Phase 1:**
-  - [ ] Docker Engine + compose plugin installed
+  - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
   - [x] v1 repo: https://github.com/Riz695/offshore-drilling-rag (linked in `PLAN.md` via PR #2)
-  - [ ] OCR API key (DeepInfra or similar for olmOCR 2, and/or Mistral) when Phase 1 reaches OCR
-  - [ ] `sbx` installed and logged in to Docker Agentic Platform, for long jobs
+  - [ ] OCR: **olmOCR 2 only** (user's decision). DeepInfra deprecated it on 2026-05-07; first verify a working provider with a 1-page test call (Parasail, then Cirrascale; fallback: rented GPU + vLLM). The user needs an API key for whichever works, in `.env` only
+  - [ ] `sbx` **not installed** (checked 2026-10-21). Package `docker-sbx` 0.49.1 is available from the Docker apt repo already configured; user must run `sudo apt-get install docker-sbx`, `sudo usermod -aG kvm $USER`, log out/in, `sbx login`. Pop!_OS isn't officially supported by Docker Sandboxes (Ubuntu 24.04 base, KVM present), so verify it works
 
 ## Phase 0: Scaffold
 
@@ -44,13 +44,14 @@ Branch `phase-0-scaffold`. Acceptance: `make lint` + `make test` pass locally an
 - 2026-10-21: v1 already has hybrid BM25 + dense + RRF, citation checks, FastAPI, Streamlit, HF Space; it has **no eval and no OCR**. v2's README must not claim v1's features as new.
 - 2026-10-21: Pivot adopted (PR #2): A OCR ingestion (olmOCR 2 / Mistral OCR 3, via API: laptop has no NVIDIA GPU), B LangGraph instead of CrewAI, C fine-tuning the embedder (new Phase 5), D MLflow, E drop LlamaIndex. Phases renumbered 0–9 (deploy is now Phase 8).
 - 2026-10-21: Docker: install Docker Engine locally (not required to be Desktop). Cloud Sandboxes are CPU-only microVMs ($0.07–$1.12/h, ≤24 h sessions), used only for long CPU jobs.
+- 2026-10-21: OCR is **olmOCR 2 only**; Mistral OCR dropped. Planning estimate: ~2,000 input tokens (page image at 1288 px + prompt) and 1,000–2,000 output tokens per page, plus 20% for retries → about $0.0005–0.0007 per page at Parasail's $0.10 / $0.20 per 1M tokens. Scanned manual (146 pages) ≈ $0.07–0.11; full corpus (982 pages) ≈ $0.50–0.70. Confirm with real usage on the first pages.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
 
 Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any run estimated over $20.
 
-- Credit: $250 (Docker Agentic Platform signup promo). **Claim date: unknown, ask the user and fill in.** Credit expires 6 months after claiming.
+- Credit: $250 (Docker Agentic Platform signup promo), **claimed 2026-10-21, expires around 2027-04-21** (6 months). Schedule heavy jobs (eval sweeps, fine-tuning) well before then.
 - Not yet verified: `sbx` on Linux, getting code/data in, secrets, Docker/compose inside, getting results out → `docs/cloud-jobs.md` (Phase 1).
 
 | Date | Job | Size | Hours | Cost | Credit left |
