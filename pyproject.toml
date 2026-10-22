@@ -9,6 +9,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.156.4",
     "pydantic-settings>=2.16.1",
+    "rank-bm25>=0.2.2",
     "tiktoken>=0.14.0",
     "uvicorn[standard]>=0.54.0",
 ]
