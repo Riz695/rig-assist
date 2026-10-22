@@ -108,7 +108,7 @@ def _manual(name: str) -> Path:
 
 @pytest.mark.integration
 def test_real_manual_tables_come_out_as_markdown() -> None:
-    pages = extract_text_layer(_manual("cds-guide-feb21.pdf"), "cds-guide")
+    pages = extract_text_layer(_manual("Drilling_Manual.pdf"), "drilling-manual")
     assert any("| --- |" in p.text for p in pages)
 
 
