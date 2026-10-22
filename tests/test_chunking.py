@@ -126,6 +126,8 @@ def test_detect_section_recognises_headings(line: str, expected: str) -> None:
         "21.1 WHAT IS UNDER-BALANCED DRILLING?........................158",
         "3.5 psi is the maximum",
         "| 1.5 | Medium duty |",
+        "Section 1 of this manual describes the pumps.",
+        "section a valve before testing it",
     ],
 )
 def test_detect_section_rejects_non_headings(line: str) -> None:
