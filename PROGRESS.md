@@ -7,12 +7,12 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 - **Current phase:** 0 (Scaffold): **done.** [PR #1](https://github.com/Riz695/rig-assist/pull/1) merged into `main` on 2026-10-21 (merged by Claude at the user's request, with a merge commit so the test-first history is kept).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21: v1 described accurately; pivot adopted (olmOCR 2 ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). `PLAN.md` on `main` is the plan to follow.
-- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25. **Next:** parsers (pdfplumber + olmOCR client with a fake OCR client in tests) + parsed-page cache, tests first.
+- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser. **Next (3b):** olmOCR client + parsed-page cache + per-page routing, tests first with a fake OCR client.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
   - [x] v1 repo: https://github.com/Riz695/offshore-drilling-rag (linked in `PLAN.md` via PR #2)
-  - [ ] OCR: **olmOCR 2 only** (user's decision). DeepInfra deprecated it on 2026-05-07; first verify a working provider with a 1-page test call (Parasail, then Cirrascale; fallback: rented GPU + vLLM). The user needs an API key for whichever works, in `.env` only
+  - [ ] OCR: **olmOCR 2 only** (user's decision). 2026-10-22: no Hugging Face inference provider and no OpenRouter listing for it; Parasail's model list needs a key, so still unverified. DeepInfra deprecated it on 2026-05-07; first verify a working provider with a 1-page test call (Parasail, then Cirrascale; fallback: rented GPU + vLLM). The user needs an API key for whichever works, in `.env` only
   - [ ] `sbx`: **installed** (v0.49.1) and user is in the `kvm` group (checked 2026-10-22). `sbx diagnose`: platform checks pass (KVM, mkfs, storage); daemon not running yet, login not checked. Still to do: `sbx daemon start`, `sbx login`, then the verification for `docs/cloud-jobs.md`. Only needed before the full-corpus jobs
 
 ## Phase 0: Scaffold
@@ -36,6 +36,7 @@ Branch `phase-1-api`.
 |---|---|---|
 | Chunking (line-aware, section detection, chunk metadata) | `c10b3f2` test → `788ed99` feat | `Tasks/P1 - Chunking.md` |
 | BM25 retriever (ported from v1, JSONL persistence) | `a9f5448` test → `d31c90c` feat | `Tasks/P1 - BM25 retriever.md` |
+| Text-layer parser (pdfplumber + tables, scanned-page detection, header/footer stripping) | `a986d0d` test → `09f5fdf` feat | `Tasks/P1 - Text-layer parser.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -57,6 +58,8 @@ Branch `phase-1-api`.
 - 2026-10-22: Chunker packs **whole lines** up to 500 cl100k tokens (overlap 50, line-aligned) instead of v1's raw token windows, so Markdown table rows are never split. Chunks never span pages. `section` = heading in effect at the chunk's first line (conservative regex: Markdown `#`, `N.N…` numbered, `Chapter/Section/Appendix`).
 - 2026-10-22: `doc_id` and `doc_title` are passed in by the caller (ingestion pipeline decides the slug scheme).
 - 2026-10-22: BM25 keeps `rank-bm25` (v1 parity; unmaintained since 2022 but tiny; `bm25s` is the fallback). Index saved as chunks in JSON Lines and rebuilt on load (no pickle). Zero-score chunks are dropped; `k < 1` raises `ValueError`. `ScoredChunk(chunk, score)` in `retrieval/models.py` is the shared result type.
+- 2026-10-22: Text layer read with **pdfplumber only** (v1 also used pypdf). Pages with < 10 letters/digits count as having no text layer. Header/footer stripping counts only pages with text. Whole corpus parses in 56 s locally (no sandbox needed for this step); 146 scanned pages + 3 near-empty pages in the OSH manual have no text.
+- 2026-10-22: olmOCR request format, from the olmocr v0.4.27 source (`pipeline.py`, `prompts.py`): `build_no_anchoring_v4_yaml_prompt`, page PNG with longest side 1288 px, `max_tokens` 8000, temperature 0.1 rising on retries, response = YAML front matter (`primary_language`, `is_rotation_valid`, `rotation_correction`, `is_table`, `is_diagram`) + Markdown with **HTML tables**; valid only if `finish_reason == "stop"`.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -72,7 +75,7 @@ Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any r
 
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
 
-Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4
+Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4 · pdfplumber 0.11.10 (pypdfium2 5.14.0, pillow 13.0.0)
 
 uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 · uvicorn 0.54.0 · pydantic 2.14.1 · pydantic-settings 2.16.1 · ruff 0.17.1 · pytest 9.1.1 · mypy 2.4.0 · pre-commit 4.7.0 · httpx2 2.15.1 · actions/checkout v7.0.1 · astral-sh/setup-uv v10.3.0
 
@@ -83,4 +86,5 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
 - `make ingest`, `make eval`, `make up`, `make down` are placeholders that exit with an error until their phase.
+- OCR output has tables as HTML, which may be one long line: the chunker would cut it by tokens. Check real olmOCR output; convert HTML tables to Markdown if needed.
 - No readiness check yet (would check Qdrant/index); add when those dependencies exist.
