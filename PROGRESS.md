@@ -7,7 +7,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 - **Current phase:** 0 (Scaffold): **done.** [PR #1](https://github.com/Riz695/rig-assist/pull/1) merged into `main` on 2026-10-21 (merged by Claude at the user's request, with a merge commit so the test-first history is kept).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21: v1 described accurately; pivot adopted (olmOCR 2 ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). `PLAN.md` on `main` is the plan to follow.
-- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking. **Next:** BM25 retriever (tests first), then parsers + page cache.
+- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25. **Next:** parsers (pdfplumber + olmOCR client with a fake OCR client in tests) + parsed-page cache, tests first.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -35,6 +35,7 @@ Branch `phase-1-api`.
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
 | Chunking (line-aware, section detection, chunk metadata) | `c10b3f2` test → `788ed99` feat | `Tasks/P1 - Chunking.md` |
+| BM25 retriever (ported from v1, JSONL persistence) | `a9f5448` test → `d31c90c` feat | `Tasks/P1 - BM25 retriever.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -55,6 +56,7 @@ Branch `phase-1-api`.
 - 2026-10-21: OCR is **olmOCR 2 only**; Mistral OCR dropped. Planning estimate: ~2,000 input tokens (page image at 1288 px + prompt) and 1,000–2,000 output tokens per page, plus 20% for retries → about $0.0005–0.0007 per page at Parasail's $0.10 / $0.20 per 1M tokens. Scanned manual (146 pages) ≈ $0.07–0.11; full corpus (982 pages) ≈ $0.50–0.70. Confirm with real usage on the first pages.
 - 2026-10-22: Chunker packs **whole lines** up to 500 cl100k tokens (overlap 50, line-aligned) instead of v1's raw token windows, so Markdown table rows are never split. Chunks never span pages. `section` = heading in effect at the chunk's first line (conservative regex: Markdown `#`, `N.N…` numbered, `Chapter/Section/Appendix`).
 - 2026-10-22: `doc_id` and `doc_title` are passed in by the caller (ingestion pipeline decides the slug scheme).
+- 2026-10-22: BM25 keeps `rank-bm25` (v1 parity; unmaintained since 2022 but tiny; `bm25s` is the fallback). Index saved as chunks in JSON Lines and rebuilt on load (no pickle). Zero-score chunks are dropped; `k < 1` raises `ValueError`. `ScoredChunk(chunk, score)` in `retrieval/models.py` is the shared result type.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -70,7 +72,7 @@ Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any r
 
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
 
-Phase 1: tiktoken 0.14.0
+Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4
 
 uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 · uvicorn 0.54.0 · pydantic 2.14.1 · pydantic-settings 2.16.1 · ruff 0.17.1 · pytest 9.1.1 · mypy 2.4.0 · pre-commit 4.7.0 · httpx2 2.15.1 · actions/checkout v7.0.1 · astral-sh/setup-uv v10.3.0
 
