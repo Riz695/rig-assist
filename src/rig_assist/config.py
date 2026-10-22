@@ -22,7 +22,15 @@ class Settings(BaseSettings):
     # --- Data ---
     data_raw_dir: Path = Path("data/raw")
     data_index_dir: Path = Path("data/index")
+    data_parsed_dir: Path = Path("data/parsed")  # OCR page cache
     job_db_path: Path = Path("data/jobs.sqlite")
+
+    # --- OCR (olmOCR 2 via any OpenAI-compatible endpoint) ---
+    # "off" by default: ingestion runs offline and free; scanned pages are reported.
+    ocr_mode: Literal["off", "missing", "all"] = "off"
+    ocr_base_url: str | None = None
+    ocr_api_key: SecretStr | None = None
+    ocr_model: str = "allenai/olmOCR-2-7B-1025"
 
     # --- Retrieval ---
     embedding_model: str = "BAAI/bge-small-en-v1.5"
@@ -49,7 +57,7 @@ class Settings(BaseSettings):
         return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
     @model_validator(mode="after")
-    def _check_llm_credentials(self) -> "Settings":
+    def _check_credentials(self) -> "Settings":
         """Fail at startup, not on the first request, if a real provider is misconfigured."""
         required: dict[str, list[tuple[str, object]]] = {
             "fake": [],
@@ -63,6 +71,9 @@ class Settings(BaseSettings):
         missing = [name for name, value in required[self.llm_provider] if not value]
         if missing:
             raise ValueError(f"LLM_PROVIDER={self.llm_provider} requires: {', '.join(missing)}")
+        # The API key stays optional: a self-hosted vLLM server may not need one.
+        if self.ocr_mode != "off" and not self.ocr_base_url:
+            raise ValueError(f"OCR_MODE={self.ocr_mode} requires: OCR_BASE_URL")
         return self
 
 
