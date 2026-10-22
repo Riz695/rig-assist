@@ -85,3 +85,32 @@ def test_langfuse_enabled_only_with_both_keys() -> None:
 def test_get_settings_is_cached() -> None:
     get_settings.cache_clear()
     assert get_settings() is get_settings()
+
+
+def test_ocr_is_off_by_default() -> None:
+    settings = make_settings()
+    assert settings.ocr_mode == "off"
+    assert settings.data_parsed_dir == Path("data/parsed")
+
+
+def test_ocr_mode_requires_a_base_url() -> None:
+    with pytest.raises(ValidationError, match="OCR_BASE_URL"):
+        make_settings(ocr_mode="missing")
+
+
+def test_ocr_settings_are_read_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OCR_MODE", "all")
+    monkeypatch.setenv("OCR_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setenv("OCR_API_KEY", "ocr-secret")
+
+    settings = make_settings()
+
+    assert settings.ocr_mode == "all"
+    assert settings.ocr_model == "allenai/olmOCR-2-7B-1025"
+    assert settings.ocr_api_key is not None
+    assert "ocr-secret" not in repr(settings)
+
+
+def test_unknown_ocr_mode_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(ocr_mode="sometimes")
