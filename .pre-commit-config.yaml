@@ -14,6 +14,13 @@ repos:
   # Use the project's own pinned ruff (from uv.lock) so hooks and CI never disagree.
   - repo: local
     hooks:
+      # detect-private-key only catches PEM keys. This blocks API keys pasted into the
+      # committed template: any *_KEY/SECRET/TOKEN/PASSWORD with a value fails the commit.
+      - id: no-secrets-in-env-example
+        name: no secret values in .env.example
+        language: pygrep
+        entry: '^[A-Z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[A-Z0-9_]*=[ \t]*[^ \t#\r\n]'
+        files: ^\.env\.example$
       - id: ruff-check
         name: ruff check
         entry: uv run ruff check --fix
