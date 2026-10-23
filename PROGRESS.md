@@ -8,7 +8,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 - **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
-- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). **Next:** `/search` modes `bm25 | dense | hybrid | hybrid_rerank` (API gets Qdrant + uploads write both), then `v1_baseline`.
+- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. **Next:** `v1_baseline` (v1's token-window chunker + Okapi IDF, top-20 per retriever, RRF k=60, top-5), then end-of-phase PR.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -62,6 +62,7 @@ Branch `phase-2-hybrid`.
 | Ingestion into both indexes (store + Qdrant), `make ingest` checks Qdrant / `--skip-dense`, `MODELS_DIR` | `5cfd819` test → `6b5bada` feat → `46d08e0` chore | `Tasks/P2 - Ingestion into both indexes.md` |
 | Dense retrieval: fastembed embedder, Qdrant `DenseIndex`, Qdrant in compose; dot-leader cleaning (truncation fix) | `1ad5f24` test → `52ec3d1` feat; `14a62c9` test → `1e59ada` feat; `793ecbe` feat (compose) | `Tasks/P2 - Dense retrieval with Qdrant.md` |
 | Cross-encoder reranker: `CrossEncoder` protocol, `FastEmbedCrossEncoder`, `RerankRetriever` (top-20 candidates); CPU speed measured | `2826762` test → `06f8733` feat | `Tasks/P2 - Cross-encoder reranker.md` |
+| `/search` modes (`SearchIndex.retriever(mode)`), uploads write Qdrant, 409 (dense index empty) / 503 (Qdrant down), `dense_score` in results | `20f0b90` test → `f7424ea` feat | `Tasks/P2 - Search modes in the API.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -105,6 +106,7 @@ Branch `phase-2-hybrid`.
 - 2026-10-23: **Embedding truncation measured** (Phase 1 open question): 46/1,328 chunks (3.5%) were over bge's 512 WordPiece tokens, losing 7.8% of all tokens. Cause: dot leaders in tables of contents (one WordPiece token per dot; a 487-cl100k-token TOC chunk was 4,909 bge tokens) and OCR HTML tables. Fix: collapse runs of 4+ dots to "…" in cleaning → 22 chunks (1.7%), 0.57% of tokens cut, max 770; all remaining in the scanned manual's HTML tables (Phase 3 candidate: HTML→Markdown tables or a smaller chunk size).
 - 2026-10-23: Ingestion writes the dense index **before** the chunk store (the store's document list = "fully ingested" marker). `make ingest` needs Qdrant (checked up front, fails in ~2 s with "docker compose up -d qdrant"); `--skip-dense` = BM25 only. Real runs: 1,316 chunks → 1,316 Qdrant points, twice (idempotent), ~300 s each (embedding dominates). Model cached in `data/models/` (65 MB). `QdrantClient(check_compatibility=False)` so creating it doesn't call the server (versions pinned instead).
 - 2026-10-24: **Reranker CPU speed measured** (12 threads, 20 real BM25 candidates/query, 5 queries): `BAAI/bge-reranker-base` (1.04 GB fp32 ONNX) **~10.7 s/query**, 2.7 GB peak RAM; `Xenova/ms-marco-MiniLM-L-6-v2` (80 MB) ~2.4 s, 1.4 GB; `jinaai/jina-reranker-v1-tiny-en` (130 MB) ~2.0 s, 1.4 GB. bge-base stays the default (`RERANKER_MODEL`, plan), fine for offline eval (~11 min for 60 questions) but slow for a live demo, worse on 1–2 vCPU Azure. **Phase 3:** compare Hit@1/MRR **and** latency for the three models (and 10 vs 20 candidates) before picking the served one. Logits observed -5.7..+2.4 (bge-base); `RerankRetriever` keeps `dense_score` for the threshold. Integration test uses MiniLM (80 MB) to keep CI downloads small.
+- 2026-10-24: API search modes: `SearchMode` Literal in `retrieval/service.py` is the single source (Pydantic 422 for others). `create_app(settings, dense=None, cross_encoder=None)` injects fakes in tests; real ones are lazy, so the app starts with Qdrant down. Qdrant unreachable (`ResponseHandlingException`) → 503 on dense modes and uploads, BM25 keeps working; store has docs but Qdrant empty (`--skip-dense`) → 409. Default mode stays `bm25` until Phase 3 picks one. Real API run, full corpus: bm25 0.25 s, dense 0.57 s (first call), hybrid 0.13 s, hybrid_rerank 10.6 s (14.8 s first call).
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -141,4 +143,5 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - A PDF deleted from `data/raw/` stays in the index (`IndexStore` has no `remove`). Add with the delete/upload API if needed.
 - No upload size limit on `POST /documents` (would return 413); no document delete endpoint.
 - Re-ingesting unchanged manuals re-embeds everything (~5 min). Could skip documents whose file hash and pipeline settings are unchanged; not needed yet.
-- No readiness check yet (would check Qdrant/index); add when those dependencies exist.
+- No readiness check yet (would check Qdrant/index): Qdrant now exists, so add `/ready` with the Phase 8 health probes.
+- Reranker model load failures (no network on first use) surface as a 500, not a clear 503.
