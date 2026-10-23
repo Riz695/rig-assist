@@ -52,7 +52,11 @@ known-first-party = ["rig_assist"]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
-    "integration: reads the real manuals in data/raw (skipped when they're absent, e.g. in CI)",
+    "integration: uses real data or models (manuals in data/raw, downloaded embedding models); skipped when unavailable",
+]
+filterwarnings = [
+    # Tests run Qdrant in-memory, where payload indexes are a no-op; the server uses them.
+    "ignore:Payload indexes have no effect in the local Qdrant:UserWarning",
 ]
 
 [tool.mypy]
