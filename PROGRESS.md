@@ -7,12 +7,12 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 - **Current phase:** 0 (Scaffold): **done.** [PR #1](https://github.com/Riz695/rig-assist/pull/1) merged into `main` on 2026-10-21 (merged by Claude at the user's request, with a merge commit so the test-first history is kept).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21: v1 described accurately; pivot adopted (olmOCR 2 ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). `PLAN.md` on `main` is the plan to follow.
-- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser, OCR client + page cache + routing, ingestion pipeline + `make ingest`. **Next:** API endpoints (`POST/GET /documents`, `POST /search`), tests first. **OCR blocked on a provider decision by the user** (see blockers).
+- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser, OCR client + page cache + routing, ingestion pipeline + `make ingest`. OCR done on a rented GPU (all 982 pages cached in `data/parsed/`, scanned manual searchable). **Next:** API endpoints (`POST/GET /documents`, `POST /search`), tests first.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
   - [x] v1 repo: https://github.com/Riz695/offshore-drilling-rag (linked in `PLAN.md` via PR #2)
-  - [ ] OCR: **olmOCR 2 only** (user's decision). No working provider yet (checked 2026-10-23, nothing charged):
+  - [x] OCR: **olmOCR 2 only** (user's decision). **Done 2026-10-23 on a rented RunPod RTX 4090 with vLLM 0.11.2** (`docs/ocr-gpu.md`); hosted providers were all unavailable (details below).
     - **Parasail:** user's key works (`/v1/models` lists 96 models) but **no olmOCR among them** (only Qwen2.5-VL-72B, Qwen3-VL-8B/235B). Inference returns 403 "add a valid payment method" for any model ID, so the ID can't be tested without a card.
     - **Cirrascale** (Ai2 Endpoint Platform, `https://ai2endpoints.cirrascale.ai/api`, model `olmOCR-2-7B-1025` per the olmocr README): their page still lists olmOCR 2 (pay-as-you-go, card, daily billing), but the API host **times out** (also outside the sandbox), and on 2026-10-23 the user confirmed the sign-up site `https://ai2endpoints.cirrascale.ai` doesn't load in their browser either. (Their "Get Started" button is an enterprise sales form, not the API.) **Treat as unavailable.**
     - **FriendliAI:** dedicated endpoints only (rent a GPU by the hour), no serverless.
@@ -46,6 +46,7 @@ Branch `phase-1-api`.
 | OCR client (olmOCR 2), parsed-page cache, per-page routing, OCR settings | `f8b7146` test → `21f9d08` feat | `Tasks/P1 - OCR client and page cache.md` |
 | Secret guard: pre-commit hook blocking values in `.env.example` | `de94f5e` chore | (in `Concepts/Environment variables and config.md`) |
 | Index store + ingestion pipeline + `make ingest` | `ebf3b91` test → `6e77488` feat → `84d2795` refactor → `b444800` feat → `f53d4c9` fix | `Tasks/P1 - Ingestion pipeline and index store.md` |
+| OCR on a rented GPU: guide, concurrent OCR (`OCR_CONCURRENCY`), unfinished pages reported missing (token limit, timeouts, 524) | `44dc645`, `c350001` docs; `ab48067` test → `22babc9` test → `7cfb56e` feat; `9044ddc` → `67ee4f1` test → `3f3e458` feat; `30671a9` test → `967e501` feat | `Tasks/P1 - OCR on a rented GPU.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -75,6 +76,9 @@ Branch `phase-1-api`.
 - 2026-10-22: **Page numbers are PDF page positions (1-based), not printed page numbers** (e.g. MarineOffshore PDF page 49 is printed "42"). The eval set must use PDF page numbers.
 - 2026-10-23: Index on disk = `IndexStore`: `data/index/documents/<doc_id>.json` (DocumentInfo) + `data/index/chunks/<doc_id>.jsonl`, written atomically, chunks first. Re-ingesting replaces a document's files (no duplicates). BM25 is rebuilt in memory from all chunks (140 ms); `BM25Index.save/load` removed. doc_id = slug of the file name with CamelCase split (`marine-offshore-log-ops-manual`); the store rejects non-slugs (path traversal).
 - 2026-10-23: First full `make ingest` (OCR off): 6 docs, 1,133 chunks, 58 s, 1.25 GB peak RAM, index 1.9 MB. 149 pages not searchable (146 scanned + 3 in OSH manual).
+- 2026-10-23: **OCR runs (olmOCR-2-7B-1025-FP8, vLLM 0.11.2, RunPod RTX 4090, `OCR_CONCURRENCY=8`)**: `missing` run: 145 scanned pages (252,668 in / 64,044 out tokens) + 3 OSH pages; `all` run: the other 834 pages in 22 min (1,427,470 in / 379,232 out tokens). Throughput ≈ 2.6 s/page at concurrency 8 vs ≈ 7 s/page sequential. Total ≈ 1.69 M input / 0.44 M output tokens (≈ $0.26 at Parasail's old list price, for comparison). All 982 pages cached (4 MB). Normal index after `OCR_MODE=missing`: 1,328 chunks; 5 pages without text, all genuinely empty (Marine p111 "SECURITY", p121 "ANNEX" dividers; OSH p4, p7, p62).
+- 2026-10-23: OCR failure policy: a page whose every attempt is incomplete (token limit, client timeout, proxy HTTP 524) raises `OcrPageUnreadableError` → page reported missing (or keeps its text layer) and the run continues; connection errors / other HTTP errors still stop the run. Found on Marine p9–10: blank "Document Control Sheet" forms where olmOCR loops on empty `<tr><td></td></tr>` rows. OCR output tables are HTML, one row per line (16 of 145 scanned pages), so the chunker keeps rows intact.
+- 2026-10-23: Pod setup lessons (in `docs/ocr-gpu.md`): pasting a key into RunPod's web terminal altered it (bracketed paste), so create the key on the pod and compare SHA-256 fingerprints; the web terminal drops, so start vLLM with `nohup`; the first server ran without `VLLM_API_KEY` (wrong key accepted) and was caught by a pre-OCR auth check; an editor save of `.env` wrote back an old copy and wiped `OCR_BASE_URL`.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -88,9 +92,11 @@ Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any r
 |---|---|---|---|---|---|
 | | | | | | $250.00 |
 
+OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time incl. setup and debugging. **Actual cost: awaiting the user's RunPod billing figure.**
+
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
 
-Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4 · pdfplumber 0.11.10 (pypdfium2 5.14.0, pillow 13.0.0) · openai 3.28.0
+Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4 · pdfplumber 0.11.10 (pypdfium2 5.14.0, pillow 13.0.0) · openai 3.28.0 · OCR server: vLLM 0.11.2 + allenai/olmOCR-2-7B-1025-FP8
 
 uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 · uvicorn 0.54.0 · pydantic 2.14.1 · pydantic-settings 2.16.1 · ruff 0.17.1 · pytest 9.1.1 · mypy 2.4.0 · pre-commit 4.7.0 · httpx2 2.15.1 · actions/checkout v7.0.1 · astral-sh/setup-uv v10.3.0
 
