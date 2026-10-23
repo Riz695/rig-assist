@@ -8,7 +8,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 - **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
-- Done: RRF + `HybridRetriever`. **Next:** dense retrieval (fastembed + Qdrant, check current docs first), ingestion into both indexes, reranker, `/search` modes, `v1_baseline`.
+- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. **Next:** ingestion writes to both indexes (idempotency test first), then reranker, `/search` modes, `v1_baseline`.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -59,6 +59,7 @@ Branch `phase-2-hybrid`.
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
 | RRF fusion + `HybridRetriever` (ported from v1) | `b6865dd` test → `b026266` feat | `Tasks/P2 - RRF and hybrid retriever.md` |
+| Dense retrieval: fastembed embedder, Qdrant `DenseIndex`, Qdrant in compose; dot-leader cleaning (truncation fix) | `1ad5f24` test → `52ec3d1` feat; `14a62c9` test → `1e59ada` feat; compose commit | `Tasks/P2 - Dense retrieval with Qdrant.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -98,6 +99,8 @@ Branch `phase-2-hybrid`.
 - 2026-10-23: Local Docker: Docker Desktop must be running (`systemctl --user start docker-desktop`) and the context set (`docker context use desktop-linux`, now the default). Its credential store (`credsStore: desktop` → pass → GPG) needs the GPG passphrase for Docker Hub pulls: run one `docker pull` in an interactive terminal first; non-interactive builds then work while gpg-agent caches it.
 - 2026-10-23: `sbx` cloud facts: shell sandbox = Ubuntu 26.04, 2 CPU / 3.8 GiB / 20 GB, Python 3.14, uv 0.13.4, Docker 29.9 + Compose. Create 8 s, resume 4 s, copy ~1.2 MB/s, `make ingest` 54 s (laptop 58 s) with a byte-identical index. Secrets: custom secrets put a placeholder in the env and the proxy sets the header on requests to an exact host; **they attach only at sandbox creation**. Docker Hub pulls need `production.cloudfront.docker.com` allowed.
 - 2026-10-23: RRF: `reciprocal_rank_fusion(lists, k=60, top_n)`, ties by chunk_id; `HybridRetriever` asks each retriever for `k_each=20` and keeps the dense cosine score on fused results (`ScoredChunk.dense_score`) for Phase 3's "not found" threshold. `Retriever` protocol = `search(query, k) -> list[ScoredChunk]`.
+- 2026-10-23: Dense: fastembed 0.9.0 `BAAI/bge-small-en-v1.5` (384-dim, 67 MB quantized ONNX, loaded on first use); qdrant-client 1.19.1 + server `v1.19.2-unprivileged` (same minor; 1.20.0 was a day old). Point id = UUID5(chunk_id), payload = Chunk; re-ingest = delete the doc's points then upsert. **No query prefix** by default (v1 used none and fastembed adds none); `FastEmbedEmbedder(query_prefix=...)` lets Phase 3 test BAAI's "Represent this sentence for searching relevant passages: ". Real run: 1,316 chunks embedded in 272 s on CPU (206 ms/chunk), queries 70–110 ms.
+- 2026-10-23: **Embedding truncation measured** (Phase 1 open question): 46/1,328 chunks (3.5%) were over bge's 512 WordPiece tokens, losing 7.8% of all tokens. Cause: dot leaders in tables of contents (one WordPiece token per dot; a 487-cl100k-token TOC chunk was 4,909 bge tokens) and OCR HTML tables. Fix: collapse runs of 4+ dots to "…" in cleaning → 22 chunks (1.7%), 0.57% of tokens cut, max 770; all remaining in the scanned manual's HTML tables (Phase 3 candidate: HTML→Markdown tables or a smaller chunk size).
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -116,6 +119,8 @@ OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time i
 
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
 
+Phase 2: fastembed 0.9.0 (onnxruntime 1.31.0, tokenizers 0.23.3) · qdrant-client 1.19.1 · Qdrant server v1.19.2
+
 Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4 · pdfplumber 0.11.10 (pypdfium2 5.14.0, pillow 13.0.0) · openai 3.28.0 · OCR server: vLLM 0.11.2 + allenai/olmOCR-2-7B-1025-FP8
 
 uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 · uvicorn 0.54.0 · pydantic 2.14.1 · pydantic-settings 2.16.1 · ruff 0.17.1 · pytest 9.1.1 · mypy 2.4.0 · pre-commit 4.7.0 · httpx2 2.15.1 · actions/checkout v7.0.1 · astral-sh/setup-uv v10.3.0
@@ -131,4 +136,5 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - OCR: rotated pages not handled (olmOCR returns `is_rotation_valid`/`rotation_correction`; its pipeline re-renders rotated). Cache key doesn't include model/prompt version. Check both once real output exists.
 - A PDF deleted from `data/raw/` stays in the index (`IndexStore` has no `remove`). Add with the delete/upload API if needed.
 - No upload size limit on `POST /documents` (would return 413); no document delete endpoint.
+- fastembed caches models in `/tmp/fastembed_cache` by default (lost on reboot; not persisted in the container): set a cache dir (e.g. `data/models/`, gitignored) when wiring the API's dense mode.
 - No readiness check yet (would check Qdrant/index); add when those dependencies exist.
