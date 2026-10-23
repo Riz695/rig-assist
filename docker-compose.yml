@@ -1,5 +1,5 @@
 # Local stack: `make up`, then open http://localhost:8000/docs. Stop with `make down`.
-# Qdrant (Phase 2) and the Streamlit UI (Phase 7) join this file later.
+# The Streamlit UI (Phase 7) joins this file later.
 services:
   api:
     build: .
@@ -9,10 +9,35 @@ services:
     env_file:
       - path: .env
         required: false  # a fresh clone runs on defaults (offline, fake LLM, OCR off)
+    environment:
+      # Inside compose, services reach each other by name (overrides .env's localhost).
+      QDRANT_URL: http://qdrant:6333
     # ./data holds the manuals (data/raw), the OCR cache and the index, and survives
     # restarts. Run as your own user so files written there stay yours (the image's
     # default user is the non-root uid 10001).
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./data:/app/data
+    depends_on:
+      qdrant:
+        condition: service_healthy
     restart: unless-stopped
+
+  qdrant:
+    # Vector database for dense retrieval. The -unprivileged image runs as non-root.
+    # Client and server are kept on the same minor version (qdrant-client 1.19.x).
+    image: qdrant/qdrant:v1.19.2-unprivileged@sha256:efb96a9425a90d2d5a1a0a474156280df1892dcdf1af3e8515bd2589b1bfd88b
+    ports:
+      - "127.0.0.1:6333:6333"  # REST API, reachable only from this machine (make ingest)
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      # The image has no curl/wget; bash's /dev/tcp opens a TCP connection to the port.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  qdrant-data:  # managed by Docker: a database we never edit by hand
