@@ -2,6 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from conftest import FakeOcr, no_sleep
 
 from rig_assist.ingestion.cache import PageCache
 from rig_assist.ingestion.parsers.olmocr import OcrError, OcrFailedError, OcrResult
@@ -11,26 +12,6 @@ MakePdf = Callable[[list[list[str]]], Path]
 
 TEXT_PAGE = ["Mud pump liner wear is checked weekly"]
 SCANNED_PAGE: list[str] = []
-
-
-class FakeOcr:
-    """Stands in for the OCR API: no network, deterministic, records every call."""
-
-    def __init__(self, text: str = "Text read from the page image by OCR", fail: bool = False):
-        self.text = text
-        self.fail = fail
-        self.calls = 0
-
-    def ocr_page(self, png: bytes, attempt: int) -> OcrResult:
-        assert png.startswith(b"\x89PNG"), "OCR must receive a rendered PNG"
-        self.calls += 1
-        if self.fail:
-            raise OcrError("503 service unavailable")
-        return OcrResult(text=f"{self.text} ({self.calls})", input_tokens=2000, output_tokens=500)
-
-
-def no_sleep(_: float) -> None:
-    pass
 
 
 @pytest.fixture
