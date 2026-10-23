@@ -19,7 +19,12 @@ from rig_assist.ingestion.cache import PageCache, file_sha256
 from rig_assist.ingestion.cleaning import strip_repeated_lines
 from rig_assist.ingestion.models import ParsedPage
 from rig_assist.ingestion.parsers import olmocr
-from rig_assist.ingestion.parsers.olmocr import OcrClient, OcrFailedError, OcrResult
+from rig_assist.ingestion.parsers.olmocr import (
+    OcrClient,
+    OcrFailedError,
+    OcrPageUnreadableError,
+    OcrResult,
+)
 from rig_assist.ingestion.parsers.text_layer import extract_text_layer, has_text_layer
 
 logger = logging.getLogger(__name__)
@@ -49,13 +54,19 @@ def _ocr_page(
     file_hash: str,
     max_attempts: int,
     sleep: Callable[[float], None],
-) -> OcrResult:
-    """Render, OCR (with retries) and cache one page. Runs in a worker thread."""
+) -> OcrResult | None:
+    """Render, OCR (with retries) and cache one page. Runs in a worker thread.
+
+    Returns None if the model could never finish the page (reported as missing).
+    """
     logger.info("OCR %s page %d", path.name, page)
     with _render_lock:
         png = olmocr.render_page_png(path, page)
     try:
         result = olmocr.ocr_with_retries(client, png, max_attempts, sleep)
+    except OcrPageUnreadableError as error:
+        logger.warning("%s page %d: %s; reported as missing", path.name, page, error)
+        return None
     except OcrFailedError as error:
         raise OcrFailedError(f"{path.name} page {page}: {error}") from error
     if cache:
@@ -82,7 +93,9 @@ def _ocr_pages(
         }
         try:
             for future in as_completed(futures):
-                results[futures[future]] = future.result()
+                result = future.result()
+                if result is not None:  # None: unreadable page, left out (reported missing)
+                    results[futures[future]] = result
         except BaseException:
             # Don't start queued pages; those already running finish and are cached.
             pool.shutdown(cancel_futures=True)

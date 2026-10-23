@@ -52,8 +52,20 @@ class OcrError(Exception):
     """One OCR attempt failed (HTTP error, timeout, truncated output). Worth retrying."""
 
 
+class OcrIncompleteError(OcrError):
+    """The model stopped before finishing the page (hit MAX_TOKENS), e.g. stuck repeating
+    empty table rows. Retried: a higher temperature often breaks the loop."""
+
+
 class OcrFailedError(Exception):
     """OCR failed on every attempt. Stops ingestion with a clear message."""
+
+
+class OcrPageUnreadableError(OcrFailedError):
+    """Every attempt produced incomplete output: the problem is this page, not the server.
+
+    Ingestion reports the page as missing and carries on, instead of stopping.
+    """
 
 
 class OcrClient(Protocol):
@@ -117,7 +129,7 @@ class OlmOcrClient:
         choice = response.choices[0]
         if choice.finish_reason != "stop":
             # "length" means the page was cut off at MAX_TOKENS: don't keep half a page.
-            raise OcrError(f"incomplete output (finish_reason={choice.finish_reason})")
+            raise OcrIncompleteError(f"incomplete output (finish_reason={choice.finish_reason})")
         usage = response.usage
         return OcrResult(
             text=strip_front_matter(choice.message.content or ""),
@@ -133,16 +145,23 @@ def ocr_with_retries(
     sleep: Callable[[float], None] = time.sleep,
     base_delay: float = 2.0,
 ) -> OcrResult:
-    """Call the OCR client up to `max_attempts` times, waiting 2 s, 4 s, ... in between."""
-    last_error: OcrError | None = None
+    """Call the OCR client up to `max_attempts` times, waiting 2 s, 4 s, ... in between.
+
+    Raises OcrPageUnreadableError if every attempt was incomplete output (a page problem),
+    otherwise OcrFailedError (a server or network problem).
+    """
+    errors: list[OcrError] = []
     for attempt in range(max_attempts):
         try:
             return client.ocr_page(png, attempt)
         except OcrError as error:
-            last_error = error
+            errors.append(error)
             if attempt < max_attempts - 1:
                 sleep(base_delay * 2**attempt)
-    raise OcrFailedError(f"OCR failed after {max_attempts} attempts: {last_error}")
+    message = f"OCR failed after {max_attempts} attempts: {errors[-1]}"
+    if all(isinstance(error, OcrIncompleteError) for error in errors):
+        raise OcrPageUnreadableError(message)
+    raise OcrFailedError(message)
 
 
 def render_page_png(path: Path, page: int, longest_side: int = TARGET_LONGEST_SIDE) -> bytes:
