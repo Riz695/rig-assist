@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from rig_assist.retrieval.service import SearchMode
+
 
 class HealthResponse(BaseModel):
     status: Literal["ok"] = Field(description="Always 'ok' when the API process is up.")
@@ -29,15 +31,22 @@ class DocumentList(BaseModel):
 class SearchRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
-            "examples": [{"query": "what causes a kick while drilling", "top_k": 5, "mode": "bm25"}]
+            "examples": [
+                {"query": "what causes a kick while drilling", "top_k": 5, "mode": "hybrid"}
+            ]
         }
     )
 
     query: str = Field(min_length=1, max_length=1000, description="A question or keywords.")
     top_k: int = Field(default=5, ge=1, le=50, description="How many chunks to return.")
-    mode: Literal["bm25"] = Field(
+    mode: SearchMode = Field(
         default="bm25",
-        description="Retrieval method. Only 'bm25' for now; dense and hybrid come in Phase 2.",
+        description=(
+            "Retrieval method. 'bm25': keyword match. 'dense': embedding similarity "
+            "(Qdrant). 'hybrid': both, fused by reciprocal rank fusion. 'hybrid_rerank': "
+            "hybrid's top 20 reordered by a cross-encoder (most accurate, slowest: "
+            "seconds per query on CPU). Every mode except 'bm25' needs Qdrant."
+        ),
     )
 
 
@@ -54,7 +63,20 @@ class SearchHit(BaseModel):
     parser: str = Field(
         description="'pdfplumber' (text layer) or 'olmocr' (OCR).", examples=["pdfplumber"]
     )
-    score: float = Field(description="BM25 score: higher is more relevant.", examples=[6.67])
+    score: float = Field(
+        description=(
+            "Higher is more relevant; the scale depends on the mode: BM25 score, cosine "
+            "similarity (dense), RRF score (hybrid) or cross-encoder logit (hybrid_rerank)."
+        ),
+        examples=[6.67],
+    )
+    dense_score: float | None = Field(
+        description=(
+            "Cosine similarity from dense retrieval (-1..1), on the same scale in every "
+            "dense mode. Null in 'bm25' mode, or when dense retrieval didn't return the chunk."
+        ),
+        examples=[0.82],
+    )
     text: str
 
 

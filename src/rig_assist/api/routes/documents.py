@@ -2,8 +2,9 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from qdrant_client.http.exceptions import ResponseHandlingException
 
-from rig_assist.api.dependencies import get_app_settings, get_search_index
+from rig_assist.api.dependencies import get_app_settings, get_search_index, qdrant_unavailable
 from rig_assist.api.schemas import DocumentList, DocumentResponse
 from rig_assist.config import Settings
 from rig_assist.ingestion.cache import PageCache
@@ -40,6 +41,7 @@ def list_documents(index: Annotated[SearchIndex, Depends(get_search_index)]) -> 
         409: {"description": "A different file already uses this doc_id"},
         415: {"description": "The file is not a PDF"},
         502: {"description": "OCR is configured but the OCR server failed"},
+        503: {"description": "Qdrant is unreachable, so the document can't be indexed"},
     },
 )
 def upload_document(
@@ -47,10 +49,11 @@ def upload_document(
     settings: Annotated[Settings, Depends(get_app_settings)],
     index: Annotated[SearchIndex, Depends(get_search_index)],
 ) -> DocumentResponse:
-    """Save the PDF to the raw folder, parse (OCR per OCR_MODE), chunk and index it.
+    """Save the PDF to the raw folder, parse (OCR per OCR_MODE), chunk and index it
+    (BM25 store and Qdrant).
 
     Uploading the same file name again replaces that document. Runs synchronously:
-    a 250-page manual takes ~15 s without OCR.
+    a 250-page manual takes ~15 s to parse without OCR, plus ~0.2 s per chunk to embed.
     """
     # Keep only the base name: "../../x.pdf" must not escape the raw folder.
     name = Path(file.filename or "").name
@@ -88,11 +91,16 @@ def upload_document(
             ocr_client=make_ocr_client(settings),
             cache=PageCache(settings.data_parsed_dir),
             ocr_concurrency=settings.ocr_concurrency,
+            dense=index.dense,
         )
     except ValueError as error:  # e.g. a damaged PDF that starts with %PDF- but can't be read
         path.unlink(missing_ok=True)
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(error)) from error
     except OcrFailedError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+    except ResponseHandlingException as error:
+        # The PDF stays in the raw folder, unlisted: retrying the upload (or `make ingest`)
+        # once Qdrant is up indexes it.
+        raise qdrant_unavailable(error) from error
     index.refresh()
     return _to_response(info)
