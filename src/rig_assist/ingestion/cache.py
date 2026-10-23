@@ -7,10 +7,10 @@ Layout: <root>/<parser>/<file hash>/<page>.json, one small readable JSON file pe
 
 import hashlib
 import json
-import os
 from dataclasses import asdict
 from pathlib import Path
 
+from rig_assist.ingestion.files import write_text_atomic
 from rig_assist.ingestion.parsers.olmocr import OcrResult
 
 
@@ -36,10 +36,8 @@ class PageCache:
         return OcrResult(**json.loads(path.read_text(encoding="utf-8")))
 
     def put(self, file_hash: str, page: int, parser: str, result: OcrResult) -> None:
-        path = self._path(file_hash, page, parser)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Write to a temp file, then rename: a crash mid-write never leaves a
-        # half-written entry that would later be read as a valid (truncated) page.
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(asdict(result), ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, path)
+        # Atomic: a crash mid-write never leaves a half-written entry that would later
+        # be read as a valid (truncated) page.
+        write_text_atomic(
+            self._path(file_hash, page, parser), json.dumps(asdict(result), ensure_ascii=False)
+        )
