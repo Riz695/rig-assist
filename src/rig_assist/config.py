@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     ocr_base_url: str | None = None
     ocr_api_key: SecretStr | None = None
     ocr_model: str = "allenai/olmOCR-2-7B-1025"
+    # Pages OCR'd at once. 1 is gentle on hosted APIs; ~8 suits a dedicated vLLM GPU,
+    # which batches concurrent requests at almost the same per-request speed.
+    ocr_concurrency: int = Field(default=1, ge=1)
 
     # --- Retrieval ---
     embedding_model: str = "BAAI/bge-small-en-v1.5"

@@ -48,10 +48,13 @@ def ingest_file(
     chunk_size: int = 500,
     chunk_overlap: int = 50,
     sleep: Callable[[float], None] = time.sleep,
+    ocr_concurrency: int = 1,
 ) -> DocumentInfo:
     """Parse, chunk and store one PDF, replacing any earlier version with the same doc_id."""
     doc_id, title = make_doc_id(path.name), make_title(path.name)
-    result = parse_document(path, doc_id, ocr_mode, ocr_client, cache, sleep=sleep)
+    result = parse_document(
+        path, doc_id, ocr_mode, ocr_client, cache, sleep=sleep, ocr_concurrency=ocr_concurrency
+    )
     chunks = chunk_pages(result.pages, doc_title=title, size=chunk_size, overlap=chunk_overlap)
     info = DocumentInfo(
         doc_id=doc_id,
@@ -84,6 +87,7 @@ def ingest_directory(
     chunk_size: int = 500,
     chunk_overlap: int = 50,
     sleep: Callable[[float], None] = time.sleep,
+    ocr_concurrency: int = 1,
 ) -> list[DocumentInfo]:
     """Ingest every *.pdf in `raw_dir` (not subfolders). Returns them sorted by doc_id."""
     pdfs = sorted(p for p in raw_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pdf")
@@ -98,6 +102,16 @@ def ingest_directory(
     for path in sorted(pdfs, key=ids.__getitem__):
         logger.info("Ingesting %s", path.name)
         infos.append(
-            ingest_file(path, store, ocr_mode, ocr_client, cache, chunk_size, chunk_overlap, sleep)
+            ingest_file(
+                path,
+                store,
+                ocr_mode,
+                ocr_client,
+                cache,
+                chunk_size,
+                chunk_overlap,
+                sleep,
+                ocr_concurrency=ocr_concurrency,
+            )
         )
     return infos

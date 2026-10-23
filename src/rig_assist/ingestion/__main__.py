@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
             ocr_mode=settings.ocr_mode,
             ocr_client=make_ocr_client(settings),
             cache=PageCache(settings.data_parsed_dir),
+            ocr_concurrency=settings.ocr_concurrency,
         )
     except (OcrFailedError, ValueError, FileNotFoundError) as error:
         print(f"Ingestion failed: {error}", file=sys.stderr)
