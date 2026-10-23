@@ -12,7 +12,13 @@ Running log of what's done, so any new session (or person) can pick up where the
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
   - [x] v1 repo: https://github.com/Riz695/offshore-drilling-rag (linked in `PLAN.md` via PR #2)
-  - [ ] OCR: **olmOCR 2 only** (user's decision). 2026-10-22: no Hugging Face inference provider and no OpenRouter listing for it; Parasail's model list needs a key, so still unverified. DeepInfra deprecated it on 2026-05-07; first verify a working provider with a 1-page test call (Parasail, then Cirrascale; fallback: rented GPU + vLLM). The user needs an API key for whichever works, in `.env` only
+  - [ ] OCR: **olmOCR 2 only** (user's decision). No working provider yet (checked 2026-10-23, nothing charged):
+    - **Parasail:** user's key works (`/v1/models` lists 96 models) but **no olmOCR among them** (only Qwen2.5-VL-72B, Qwen3-VL-8B/235B). Inference returns 403 "add a valid payment method" for any model ID, so the ID can't be tested without a card.
+    - **Cirrascale** (Ai2 Endpoint Platform, `https://ai2endpoints.cirrascale.ai/api`, model `olmOCR-2-7B-1025` per the olmocr README): their page still lists olmOCR 2 (pay-as-you-go, card, daily billing), but the API host **times out** (also outside the sandbox). Needs sign-up via their site.
+    - **FriendliAI:** dedicated endpoints only (rent a GPU by the hour), no serverless.
+    - DeepInfra deprecated it 2026-05-07; no Hugging Face inference provider; not on OpenRouter.
+    - Fallback in PLAN.md: official olmocr pipeline with vLLM on a rented GPU (estimate cost, ask the user first).
+    - 2026-10-23: user put the key in `.env` and also in `.env.example`; caught before any commit (not in tracked files or history), `.env.example` restored, pre-commit hook `no-secrets-in-env-example` added (`de94f5e`).
   - [ ] `sbx`: **installed** (v0.49.1) and user is in the `kvm` group (checked 2026-10-22). `sbx diagnose`: platform checks pass (KVM, mkfs, storage); daemon not running yet, login not checked. Still to do: `sbx daemon start`, `sbx login`, then the verification for `docs/cloud-jobs.md`. Only needed before the full-corpus jobs
 
 ## Phase 0: Scaffold
