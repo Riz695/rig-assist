@@ -1,6 +1,6 @@
+import contextlib
 import hashlib
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -139,20 +139,29 @@ def test_running_headers_are_stripped(make_pdf: MakePdf) -> None:
 class PageEchoOcr:
     """Answer depends only on the image, so results can't depend on thread timing.
 
-    Also records how many calls were in flight at once.
+    Records how many calls were in flight at once. With `meet=2`, the first two calls
+    wait for each other at a barrier: that only succeeds if they run at the same time,
+    which proves concurrency without relying on sleeps.
     """
 
-    def __init__(self, delay: float = 0.05) -> None:
-        self.delay = delay
+    def __init__(self, meet: int = 0) -> None:
         self.in_flight = 0
         self.max_in_flight = 0
+        self._calls = 0
         self._lock = threading.Lock()
+        self._barrier = threading.Barrier(meet) if meet else None
 
     def ocr_page(self, png: bytes, attempt: int) -> OcrResult:
         with self._lock:
+            self._calls += 1
+            first_calls = self._barrier is not None and self._calls <= self._barrier.parties
             self.in_flight += 1
             self.max_in_flight = max(self.max_in_flight, self.in_flight)
-        time.sleep(self.delay)  # long enough for other threads to start
+        if first_calls and self._barrier is not None:
+            # Both calls must be in flight to pass. If they ran one at a time, the wait
+            # times out, max_in_flight stays 1 and the test fails.
+            with contextlib.suppress(threading.BrokenBarrierError):
+                self._barrier.wait(timeout=5)
         with self._lock:
             self.in_flight -= 1
         digest = hashlib.sha256(png).hexdigest()[:12]
@@ -175,12 +184,15 @@ def test_concurrent_ocr_gives_the_same_pages_in_the_same_order(four_pages: Path)
 
 
 def test_concurrency_sends_several_pages_at_once(four_pages: Path) -> None:
-    sequential, parallel = PageEchoOcr(), PageEchoOcr()
-    parse_document(four_pages, "d", "all", sequential, ocr_concurrency=1)
+    parallel = PageEchoOcr(meet=2)
     parse_document(four_pages, "d", "all", parallel, ocr_concurrency=4)
+    assert parallel.max_in_flight >= 2
 
+
+def test_concurrency_one_sends_one_page_at_a_time(four_pages: Path) -> None:
+    sequential = PageEchoOcr()
+    parse_document(four_pages, "d", "all", sequential, ocr_concurrency=1)
     assert sequential.max_in_flight == 1
-    assert parallel.max_in_flight > 1
 
 
 def test_concurrent_ocr_failure_still_names_the_page(make_pdf: MakePdf) -> None:
