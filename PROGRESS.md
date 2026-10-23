@@ -7,7 +7,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 - **Current phase:** 0 (Scaffold): **done.** [PR #1](https://github.com/Riz695/rig-assist/pull/1) merged into `main` on 2026-10-21 (merged by Claude at the user's request, with a merge commit so the test-first history is kept).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21: v1 described accurately; pivot adopted (olmOCR 2 ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). `PLAN.md` on `main` is the plan to follow.
-- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser, OCR client + page cache + routing, ingestion pipeline + `make ingest`. OCR done on a rented GPU (all 982 pages cached in `data/parsed/`, scanned manual searchable). API endpoints done. **Next:** `Dockerfile` (multi-stage, non-root) + `docker-compose.yml`, then the Phase 1 acceptance check (compose up → upload via Swagger → search) and `docs/cloud-jobs.md` (`sbx` verification).
+- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser, OCR client + page cache + routing, ingestion pipeline + `make ingest`. OCR done on a rented GPU (all 982 pages cached in `data/parsed/`, scanned manual searchable). API, Docker and compose done; **Phase 1 acceptance passed 2026-10-23** (compose up → healthy → Swagger → upload 201 → /search with page numbers; all 6 manuals searchable incl. the scanned one). **Next:** decide on `docs/cloud-jobs.md` (`sbx` verification: now or Phase 3), then open the Phase 1 PR for review.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -47,6 +47,7 @@ Branch `phase-1-api`.
 | Secret guard: pre-commit hook blocking values in `.env.example` | `de94f5e` chore | (in `Concepts/Environment variables and config.md`) |
 | Index store + ingestion pipeline + `make ingest` | `ebf3b91` test → `6e77488` feat → `84d2795` refactor → `b444800` feat → `f53d4c9` fix | `Tasks/P1 - Ingestion pipeline and index store.md` |
 | API: `POST/GET /documents`, `POST /search`; BM25 Lucene IDF fix | `d59dd9c` test → `ada9523` test → `5ba332e` fix → `d202314` feat | `Tasks/P1 - Documents and search API.md` |
+| Docker: multi-stage `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `make up/down`, CI image check; `.env` inline-comment fix | `d3beef8` fix → `e0bd443` feat → `de904e2` ci | `Tasks/P1 - Docker and docker compose.md` |
 | OCR on a rented GPU: guide, concurrent OCR (`OCR_CONCURRENCY`), unfinished pages reported missing (token limit, timeouts, 524) | `44dc645`, `c350001` docs; `ab48067` test → `22babc9` test → `7cfb56e` feat; `9044ddc` → `67ee4f1` test → `3f3e458` feat; `30671a9` test → `967e501` feat | `Tasks/P1 - OCR on a rented GPU.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
@@ -82,6 +83,9 @@ Branch `phase-1-api`.
 - 2026-10-23: Pod setup lessons (in `docs/ocr-gpu.md`): pasting a key into RunPod's web terminal altered it (bracketed paste), so create the key on the pod and compare SHA-256 fingerprints; the web terminal drops, so start vLLM with `nohup`; the first server ran without `VLLM_API_KEY` (wrong key accepted) and was caught by a pre-OCR auth check; an editor save of `.env` wrote back an old copy and wiped `OCR_BASE_URL`.
 - 2026-10-23: API: `create_app(settings)` keeps settings + `SearchIndex` (store + cached BM25, rebuilt after uploads, locked) on `app.state`. Upload = base name only, `.pdf` + `%PDF-` check (415), doc_id clash with a different file (409), sync ingestion (OCR per settings; OCR failure 502). Search: `mode: Literal["bm25"]` (422 otherwise), `top_k` 1–50, empty index 409. No upload size limit yet.
 - 2026-10-23: **BM25 IDF changed to Lucene's** ln(1 + (N − n + 0.5)/(n + 0.5)): rank-bm25's Okapi IDF is 0 for a term in 1 of 2 chunks, so a fresh index with one small manual found nothing (v1 has this flaw). Spot-checked real-corpus top-3 unchanged. **Phase 2 `v1_baseline` must use Okapi's IDF** (plain `BM25Okapi`) to reproduce v1.
+- 2026-10-23: Docker: builder `python:3.12.15-slim-trixie` + `uv` 0.13.3, both pinned by digest; `uv sync --locked --no-dev --no-editable` (deps layer first); tiktoken `cl100k_base` baked into `/app/tiktoken` (container starts offline); runtime runs as uid 10001 with a Python-based `HEALTHCHECK`. Image 464 MB, build 39 s. Compose bind-mounts `./data` and runs as `${UID:-1000}` so written files stay the user's. CI `docker` job builds, waits for `/health`, asserts non-root.
+- 2026-10-23: Docker Compose parses `KEY=   # comment` as the value `# comment` (python-dotenv gives `""`): comments for empty values now sit on their own line in `.env.example` and the user's `.env`; pre-commit rule `no-inline-comment-on-empty-env-value` enforces it. Check what containers get with `docker compose config`.
+- 2026-10-23: Local Docker: Docker Desktop must be running (`systemctl --user start docker-desktop`) and the context set (`docker context use desktop-linux`, now the default). Its credential store (`credsStore: desktop` → pass → GPG) needs the GPG passphrase for Docker Hub pulls: run one `docker pull` in an interactive terminal first; non-interactive builds then work while gpg-agent caches it.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -95,7 +99,7 @@ Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any r
 |---|---|---|---|---|---|
 | | | | | | $250.00 |
 
-OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time incl. setup and debugging. **Actual cost: awaiting the user's RunPod billing figure.**
+OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time incl. setup and debugging. **Provisional (user, 2026-10-23): RunPod showed $1.236 billed; balance went from $10.00 to $7.87 ($2.13). Billing lags ~1 h; final figure to follow.**
 
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
 
@@ -109,8 +113,9 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - **Phase 2:** check embedding truncation: 500 cl100k tokens can exceed bge-small's 512 WordPiece limit. Measure on the corpus; lower the chunk size for dense retrieval if many chunks are cut.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
-- `make eval`, `make up`, `make down` are placeholders that exit with an error until their phase.
+- `make eval` is a placeholder that exit with an error until their phase.
 - OCR output has tables as HTML, which may be one long line: the chunker would cut it by tokens. Check real olmOCR output; convert HTML tables to Markdown if needed.
 - OCR: rotated pages not handled (olmOCR returns `is_rotation_valid`/`rotation_correction`; its pipeline re-renders rotated). Cache key doesn't include model/prompt version. Check both once real output exists.
 - A PDF deleted from `data/raw/` stays in the index (`IndexStore` has no `remove`). Add with the delete/upload API if needed.
+- No upload size limit on `POST /documents` (would return 413); no document delete endpoint.
 - No readiness check yet (would check Qdrant/index); add when those dependencies exist.
