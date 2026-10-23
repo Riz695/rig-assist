@@ -59,7 +59,7 @@ Branch `phase-2-hybrid`.
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
 | RRF fusion + `HybridRetriever` (ported from v1) | `b6865dd` test → `b026266` feat | `Tasks/P2 - RRF and hybrid retriever.md` |
-| Dense retrieval: fastembed embedder, Qdrant `DenseIndex`, Qdrant in compose; dot-leader cleaning (truncation fix) | `1ad5f24` test → `52ec3d1` feat; `14a62c9` test → `1e59ada` feat; compose commit | `Tasks/P2 - Dense retrieval with Qdrant.md` |
+| Dense retrieval: fastembed embedder, Qdrant `DenseIndex`, Qdrant in compose; dot-leader cleaning (truncation fix) | `1ad5f24` test → `52ec3d1` feat; `14a62c9` test → `1e59ada` feat; `793ecbe` feat (compose) | `Tasks/P2 - Dense retrieval with Qdrant.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
