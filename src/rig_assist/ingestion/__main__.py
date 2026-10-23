@@ -27,6 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     settings = get_settings()
     logging.basicConfig(level=settings.log_level, format="%(levelname)s %(message)s")
+    # huggingface_hub checks the Hub for model updates on every run (a dozen requests even
+    # when the model is cached); its HTTP client logs each one at INFO.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     dense: DenseIndex | None = None
     if not args.skip_dense:
