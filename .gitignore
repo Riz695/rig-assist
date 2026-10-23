@@ -24,6 +24,7 @@ htmlcov/
 data/raw/*
 !data/raw/.gitkeep
 data/index/
+data/parsed/
 *.sqlite
 *.db
 

@@ -27,14 +27,14 @@ format: ## Auto-fix lint issues and format the code
 	uv run ruff format .
 
 # Targets for later phases fail loudly instead of pretending to work.
-ingest: ## Build the search indexes from data/raw/ (Phase 1)
-	@echo "make ingest: not implemented yet (Phase 1)" && exit 1
+ingest: ## Parse, chunk and index every PDF in data/raw/ (OCR per OCR_MODE in .env)
+	uv run python -m rig_assist.ingestion
 
 eval: ## Reproduce the evaluation tables (Phase 3)
 	@echo "make eval: not implemented yet (Phase 3)" && exit 1
 
-up: ## Start the stack with docker compose (Phase 1)
-	@echo "make up: not implemented yet (Phase 1)" && exit 1
+up: ## Build and start the stack in the background (API on http://localhost:8000/docs)
+	docker compose up --build --detach
 
-down: ## Stop the docker compose stack (Phase 1)
-	@echo "make down: not implemented yet (Phase 1)" && exit 1
+down: ## Stop the docker compose stack
+	docker compose down

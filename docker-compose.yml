@@ -1,0 +1,18 @@
+# Local stack: `make up`, then open http://localhost:8000/docs. Stop with `make down`.
+# Qdrant (Phase 2) and the Streamlit UI (Phase 7) join this file later.
+services:
+  api:
+    build: .
+    image: rig-assist-api:local
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false  # a fresh clone runs on defaults (offline, fake LLM, OCR off)
+    # ./data holds the manuals (data/raw), the OCR cache and the index, and survives
+    # restarts. Run as your own user so files written there stay yours (the image's
+    # default user is the non-root uid 10001).
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

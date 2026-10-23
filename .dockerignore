@@ -1,0 +1,15 @@
+# Keep the build context small and secret-free: only pyproject.toml, uv.lock and src/
+# are needed (see Dockerfile).
+.git
+.github
+.venv
+.env
+.env.*
+data/
+docs/
+tests/
+**/__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.md

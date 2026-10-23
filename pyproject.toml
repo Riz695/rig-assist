@@ -8,7 +8,12 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.156.4",
+    "openai>=3.28.0,<4",
+    "pdfplumber>=0.11.10",
     "pydantic-settings>=2.16.1",
+    "python-multipart>=0.0.32",
+    "rank-bm25>=0.2.2",
+    "tiktoken>=0.14.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -44,6 +49,9 @@ known-first-party = ["rig_assist"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+markers = [
+    "integration: reads the real manuals in data/raw (skipped when they're absent, e.g. in CI)",
+]
 
 [tool.mypy]
 # Lenient on purpose (see PLAN.md): check our code, don't fail on untyped third-party libs.
