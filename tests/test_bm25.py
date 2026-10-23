@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from rig_assist.ingestion.models import Chunk
@@ -107,28 +105,3 @@ def test_search_on_empty_index_returns_empty() -> None:
 def test_index_reports_its_size(index: BM25Index) -> None:
     assert len(index) == 5
     assert len(BM25Index.build([])) == 0
-
-
-# --- persistence --------------------------------------------------------
-
-
-def test_save_load_roundtrip_keeps_results(index: BM25Index, tmp_path: Path) -> None:
-    path = tmp_path / "index" / "bm25.jsonl"
-    index.save(path)
-    loaded = BM25Index.load(path)
-    assert len(loaded) == len(index)
-    assert loaded.search("mud engineer", k=3) == index.search("mud engineer", k=3)
-
-
-def test_saved_index_is_plain_text_not_pickle(index: BM25Index, tmp_path: Path) -> None:
-    path = tmp_path / "bm25.jsonl"
-    index.save(path)
-    first_line = path.read_text(encoding="utf-8").splitlines()[0]
-    assert first_line.startswith("{")
-    assert '"chunk_id": "drilling-manual::p3::c0"' in first_line
-
-
-def test_save_load_roundtrip_of_empty_index(tmp_path: Path) -> None:
-    path = tmp_path / "bm25.jsonl"
-    BM25Index.build([]).save(path)
-    assert len(BM25Index.load(path)) == 0

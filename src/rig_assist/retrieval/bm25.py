@@ -1,16 +1,12 @@
 """Keyword search with BM25 (Okapi variant from `rank-bm25`).
 
 Ported from v1 (`src/rag/bm25_index.py`), same tokenizer and scoring, so v1's
-retrieval can be reproduced. One change: v1 pickled the index; here the chunks are
-saved as JSON Lines and BM25 is rebuilt on load. That's plain text, safe to load
-(unpickling can run code), and doesn't break when a library version changes.
-Rebuilding takes milliseconds for a few thousand chunks.
+retrieval can be reproduced. One change: v1 pickled the index. Here nothing is
+pickled: the chunks are saved as JSON by `IndexStore`, and the BM25 index is rebuilt
+from them in memory (milliseconds for a few thousand chunks).
 """
 
-import json
 import re
-from dataclasses import asdict
-from pathlib import Path
 
 from rank_bm25 import BM25Okapi
 
@@ -53,16 +49,3 @@ class BM25Index:
             for i in ranked[:k]
             if scores[i] > 0
         ]
-
-    def save(self, path: Path) -> None:
-        """Write one JSON object per chunk (JSON Lines)."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
-            for chunk in self._chunks:
-                f.write(json.dumps(asdict(chunk), ensure_ascii=False) + "\n")
-
-    @classmethod
-    def load(cls, path: Path) -> "BM25Index":
-        with path.open(encoding="utf-8") as f:
-            chunks = [Chunk(**json.loads(line)) for line in f if line.strip()]
-        return cls(chunks)
