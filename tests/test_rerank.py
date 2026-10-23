@@ -1,6 +1,7 @@
 """Cross-encoder reranking: a fake first stage + a fake cross-encoder (no model)."""
 
 import pytest
+from conftest import FakeCrossEncoder
 
 from rig_assist.ingestion.models import Chunk
 from rig_assist.retrieval.models import ScoredChunk
@@ -34,18 +35,6 @@ class FakeFirstStage:
     def search(self, query: str, k: int) -> list[ScoredChunk]:
         self.asked_k.append(k)
         return self.hits[:k]
-
-
-class FakeCrossEncoder:
-    """Scores a text by how many query words it contains; records every call."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, list[str]]] = []
-
-    def score(self, query: str, texts: list[str]) -> list[float]:
-        self.calls.append((query, texts))
-        words = set(query.lower().split())
-        return [float(len(words & set(text.lower().split()))) for text in texts]
 
 
 FIRST_STAGE = [

@@ -1,15 +1,21 @@
-"""API contract tests for /documents and /search (FastAPI TestClient, temp folders, no OCR)."""
+"""API contract tests for /documents and /search.
+
+FastAPI TestClient, temp folders, no OCR; Qdrant in-memory with a fake embedder and a
+fake cross-encoder, so no server and no model downloads.
+"""
 
 from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import build_pdf
+from conftest import FakeCrossEncoder, KeywordEmbedder, build_pdf
 from fastapi.testclient import TestClient
 from httpx2 import Response
+from qdrant_client import QdrantClient
 
 from rig_assist.api.main import create_app
 from rig_assist.config import Settings
+from rig_assist.retrieval.dense import DenseIndex
 
 PUMP_MANUAL = build_pdf(
     [
@@ -31,8 +37,23 @@ def settings(tmp_path: Path) -> Settings:
 
 
 @pytest.fixture
-def client(settings: Settings) -> TestClient:
-    return TestClient(create_app(settings))
+def dense() -> DenseIndex:
+    return DenseIndex(QdrantClient(":memory:"), "test_chunks", KeywordEmbedder())
+
+
+def make_client(settings: Settings, dense: DenseIndex) -> TestClient:
+    return TestClient(create_app(settings, dense=dense, cross_encoder=FakeCrossEncoder()))
+
+
+def unreachable_qdrant() -> DenseIndex:
+    """A dense index whose server refuses connections (nothing listens on port 1)."""
+    client = QdrantClient(url="http://127.0.0.1:1", check_compatibility=False, timeout=2)
+    return DenseIndex(client, "test_chunks", KeywordEmbedder())
+
+
+@pytest.fixture
+def client(settings: Settings, dense: DenseIndex) -> TestClient:
+    return make_client(settings, dense)
 
 
 def upload(
@@ -74,7 +95,14 @@ def test_uploaded_documents_are_listed(client: TestClient) -> None:
     assert [d["doc_id"] for d in docs] == ["drilling-manual"]
 
 
-def test_uploading_the_same_file_again_replaces_it(client: TestClient) -> None:
+def test_upload_writes_the_chunks_into_the_dense_index_too(
+    client: TestClient, dense: DenseIndex
+) -> None:
+    body = upload(client, "Drilling_Manual.pdf", PUMP_MANUAL).json()
+    assert dense.count_document("drilling-manual") == body["chunks"]
+
+
+def test_uploading_the_same_file_again_replaces_it(client: TestClient, dense: DenseIndex) -> None:
     first = upload(client, "Drilling_Manual.pdf", PUMP_MANUAL).json()
     second = upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
 
@@ -82,6 +110,17 @@ def test_uploading_the_same_file_again_replaces_it(client: TestClient) -> None:
     docs = client.get("/documents").json()["documents"]
     assert len(docs) == 1
     assert docs[0]["chunks"] == first["chunks"]
+    assert dense.count() == first["chunks"]  # no duplicates in Qdrant either
+
+
+def test_upload_with_qdrant_down_is_503_and_the_document_is_not_listed(
+    settings: Settings,
+) -> None:
+    client = make_client(settings, unreachable_qdrant())
+    response = upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
+    assert response.status_code == 503
+    assert "docker compose up -d qdrant" in response.json()["detail"]
+    assert client.get("/documents").json() == {"documents": []}
 
 
 def test_upload_reports_pages_without_text(client: TestClient) -> None:
@@ -167,16 +206,80 @@ def test_search_with_no_match_returns_an_empty_list(client: TestClient) -> None:
     assert response.json()["results"] == []
 
 
-def test_search_on_an_empty_index_says_to_upload_first(client: TestClient) -> None:
-    response = search(client, query="pump")
+@pytest.mark.parametrize("mode", ["bm25", "dense", "hybrid", "hybrid_rerank"])
+def test_search_on_an_empty_index_says_to_upload_first(client: TestClient, mode: str) -> None:
+    response = search(client, query="pump", mode=mode)
     assert response.status_code == 409
     assert "POST /documents" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("mode", ["bm25", "dense", "hybrid", "hybrid_rerank"])
+def test_every_mode_finds_the_relevant_page(client: TestClient, mode: str) -> None:
+    upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
+    response = search(client, query="mud pump liners", mode=mode, top_k=2)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == mode
+    assert body["results"][0]["page"] == 1
+    assert len(body["results"]) <= 2
+
+
+def test_dense_mode_matches_meaning_where_bm25_finds_nothing(client: TestClient) -> None:
+    # The manual says "kick", the query "kicks". BM25 matches exact tokens (no stemming),
+    # so it finds nothing; the fake embedder, like a real one, puts both near "kick".
+    upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
+    assert search(client, query="kicks", mode="bm25").json()["results"] == []
+    dense = search(client, query="kicks", mode="dense").json()["results"]
+    assert dense[0]["page"] == 2
+
+
+def test_dense_score_is_reported_for_modes_that_use_dense_retrieval(client: TestClient) -> None:
+    upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
+    bm25 = search(client, query="mud pump", mode="bm25").json()["results"][0]
+    hybrid = search(client, query="mud pump", mode="hybrid").json()["results"][0]
+    assert bm25["dense_score"] is None
+    assert 0 < hybrid["dense_score"] <= 1.0 + 1e-6
+    assert hybrid["score"] != hybrid["dense_score"]  # the RRF score
+
+
+def test_hybrid_rerank_scores_with_the_cross_encoder(client: TestClient) -> None:
+    upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
+    top = search(client, query="close the annular preventer", mode="hybrid_rerank").json()
+    # FakeCrossEncoder: the score is the number of query words found in the chunk.
+    assert top["results"][0]["page"] == 2
+    assert top["results"][0]["score"] == 4.0
+
+
+@pytest.mark.parametrize("mode", ["dense", "hybrid", "hybrid_rerank"])
+def test_dense_modes_with_qdrant_down_are_503_and_bm25_still_works(
+    settings: Settings, dense: DenseIndex, mode: str
+) -> None:
+    upload(make_client(settings, dense), "Drilling_Manual.pdf", PUMP_MANUAL)
+    client = make_client(settings, unreachable_qdrant())
+    response = search(client, query="pump", mode=mode)
+    assert response.status_code == 503
+    assert "docker compose up -d qdrant" in response.json()["detail"]
+    assert search(client, query="pump", mode="bm25").status_code == 200
+
+
+@pytest.mark.parametrize("mode", ["dense", "hybrid", "hybrid_rerank"])
+def test_dense_modes_say_so_when_only_bm25_was_built(settings: Settings, mode: str) -> None:
+    # e.g. `make ingest --skip-dense`: the store has documents, Qdrant has none.
+    upload(
+        make_client(settings, DenseIndex(QdrantClient(":memory:"), "a", KeywordEmbedder())),
+        "Drilling_Manual.pdf",
+        PUMP_MANUAL,
+    )
+    empty_dense = DenseIndex(QdrantClient(":memory:"), "b", KeywordEmbedder())
+    response = search(make_client(settings, empty_dense), query="pump", mode=mode)
+    assert response.status_code == 409
+    assert "make ingest" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        {"query": "pump", "mode": "semantic"},  # unknown mode (dense etc. arrive in Phase 2)
+        {"query": "pump", "mode": "semantic"},  # unknown mode
         {"query": ""},  # empty query
         {"query": "pump", "top_k": 0},
         {"query": "pump", "top_k": 51},
@@ -195,9 +298,9 @@ def test_search_sees_documents_uploaded_after_the_app_started(client: TestClient
     assert search(client, query="riser tension").json()["results"][0]["doc_id"] == "riser-notes"
 
 
-def test_app_loads_an_existing_index_at_startup(settings: Settings) -> None:
-    upload(TestClient(create_app(settings)), "Drilling_Manual.pdf", PUMP_MANUAL)
-    restarted = TestClient(create_app(settings))
+def test_app_loads_an_existing_index_at_startup(settings: Settings, dense: DenseIndex) -> None:
+    upload(make_client(settings, dense), "Drilling_Manual.pdf", PUMP_MANUAL)
+    restarted = make_client(settings, dense)
     assert search(restarted, query="liners").json()["results"][0]["page"] == 1
 
 

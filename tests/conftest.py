@@ -120,3 +120,15 @@ class KeywordEmbedder:
     def embed_query(self, text: str) -> list[float]:
         self.queries.append(text)
         return self._vector(self.query_prefix + text)
+
+
+class FakeCrossEncoder:
+    """Scores a text by how many query words it contains; records every call."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def score(self, query: str, texts: list[str]) -> list[float]:
+        self.calls.append((query, texts))
+        words = set(query.lower().split())
+        return [float(len(words & set(text.lower().split()))) for text in texts]
