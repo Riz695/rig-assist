@@ -53,8 +53,9 @@ class OcrError(Exception):
 
 
 class OcrIncompleteError(OcrError):
-    """The model stopped before finishing the page (hit MAX_TOKENS), e.g. stuck repeating
-    empty table rows. Retried: a higher temperature often breaks the loop."""
+    """The page didn't finish: the model hit MAX_TOKENS or the request timed out, typically
+    because it got stuck repeating empty table rows. Retried: a higher temperature often
+    breaks the loop."""
 
 
 class OcrFailedError(Exception):
@@ -93,6 +94,7 @@ class OlmOcrClient:
         http_client: httpx2.Client | None = None,  # tests pass a mock transport here
     ) -> None:
         self.model = model
+        self.timeout = timeout
         # max_retries=0: ocr_with_retries owns retrying (with a rising temperature),
         # otherwise every failure would be retried 3 × 3 times.
         self._client = openai.OpenAI(
@@ -121,7 +123,13 @@ class OlmOcrClient:
                 max_tokens=MAX_TOKENS,
                 temperature=temperature,
             )
+        except openai.APITimeoutError as error:
+            # A looping page can generate past the timeout. Caught before APIError below,
+            # which it subclasses.
+            raise OcrIncompleteError(f"timed out after {self.timeout:.0f} s") from error
         except openai.APIStatusError as error:
+            if error.status_code == 524:  # proxy timeout (RunPod/Cloudflare close at 100 s)
+                raise OcrIncompleteError("HTTP 524: proxy timeout") from error
             raise OcrError(f"HTTP {error.status_code}: {error.message}") from error
         except openai.APIError as error:  # connection errors and timeouts
             raise OcrError(f"{type(error).__name__}: {error}") from error
