@@ -7,7 +7,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 - **Current phase:** 0 (Scaffold): **done.** [PR #1](https://github.com/Riz695/rig-assist/pull/1) merged into `main` on 2026-10-21 (merged by Claude at the user's request, with a merge commit so the test-first history is kept).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21: v1 described accurately; pivot adopted (olmOCR 2 ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). `PLAN.md` on `main` is the plan to follow.
-- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser, OCR client + page cache + routing. **Next:** ingestion pipeline (parse → chunk → BM25 index, `make ingest`), then the API endpoints. **OCR live test still needs the user's provider key.**
+- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser, OCR client + page cache + routing, ingestion pipeline + `make ingest`. **Next:** API endpoints (`POST/GET /documents`, `POST /search`), tests first. **OCR blocked on a provider decision by the user** (see blockers).
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -44,6 +44,8 @@ Branch `phase-1-api`.
 | BM25 retriever (ported from v1, JSONL persistence) | `a9f5448` test → `d31c90c` feat | `Tasks/P1 - BM25 retriever.md` |
 | Text-layer parser (pdfplumber + tables, scanned-page detection, header/footer stripping) | `a986d0d` test → `09f5fdf` feat | `Tasks/P1 - Text-layer parser.md` |
 | OCR client (olmOCR 2), parsed-page cache, per-page routing, OCR settings | `f8b7146` test → `21f9d08` feat | `Tasks/P1 - OCR client and page cache.md` |
+| Secret guard: pre-commit hook blocking values in `.env.example` | `de94f5e` chore | (in `Concepts/Environment variables and config.md`) |
+| Index store + ingestion pipeline + `make ingest` | `ebf3b91` test → `6e77488` feat → `84d2795` refactor → `b444800` feat → `f53d4c9` fix | `Tasks/P1 - Ingestion pipeline and index store.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -71,6 +73,8 @@ Branch `phase-1-api`.
 - 2026-10-22: OCR client uses the `openai` SDK against any OpenAI-compatible URL, SDK retries off (`max_retries=0`); `ocr_with_retries` does 3 attempts with 2 s / 4 s backoff and olmOCR's rising temperature. `finish_reason != "stop"` is treated as a failure. Cache key = (SHA-256 of PDF bytes, page, parser), one JSON per page, written atomically. Ingestion stops on a page that fails all retries; finished pages stay cached.
 - 2026-10-22: `openai` pinned to 3.28.0 (released 2026-10-09), not the newest 3.36.1 (released that day): openai ships several releases a week; prefer ones out ~2 weeks.
 - 2026-10-22: **Page numbers are PDF page positions (1-based), not printed page numbers** (e.g. MarineOffshore PDF page 49 is printed "42"). The eval set must use PDF page numbers.
+- 2026-10-23: Index on disk = `IndexStore`: `data/index/documents/<doc_id>.json` (DocumentInfo) + `data/index/chunks/<doc_id>.jsonl`, written atomically, chunks first. Re-ingesting replaces a document's files (no duplicates). BM25 is rebuilt in memory from all chunks (140 ms); `BM25Index.save/load` removed. doc_id = slug of the file name with CamelCase split (`marine-offshore-log-ops-manual`); the store rejects non-slugs (path traversal).
+- 2026-10-23: First full `make ingest` (OCR off): 6 docs, 1,133 chunks, 58 s, 1.25 GB peak RAM, index 1.9 MB. 149 pages not searchable (146 scanned + 3 in OSH manual).
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -96,7 +100,8 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - **Phase 2:** check embedding truncation: 500 cl100k tokens can exceed bge-small's 512 WordPiece limit. Measure on the corpus; lower the chunk size for dense retrieval if many chunks are cut.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
-- `make ingest`, `make eval`, `make up`, `make down` are placeholders that exit with an error until their phase.
+- `make eval`, `make up`, `make down` are placeholders that exit with an error until their phase.
 - OCR output has tables as HTML, which may be one long line: the chunker would cut it by tokens. Check real olmOCR output; convert HTML tables to Markdown if needed.
 - OCR: rotated pages not handled (olmOCR returns `is_rotation_valid`/`rotation_correction`; its pipeline re-renders rotated). Cache key doesn't include model/prompt version. Check both once real output exists.
+- A PDF deleted from `data/raw/` stays in the index (`IndexStore` has no `remove`). Add with the delete/upload API if needed.
 - No readiness check yet (would check Qdrant/index); add when those dependencies exist.
