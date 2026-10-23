@@ -258,3 +258,10 @@ def test_unreadable_page_falls_back_to_its_text_layer_when_it_has_one(make_pdf: 
 
     assert [(p.page, p.parser) for p in result.pages] == [(1, "pdfplumber")]
     assert result.missing_pages == []
+
+
+def test_parsed_pages_have_dot_leaders_collapsed(make_pdf: MakePdf) -> None:
+    toc = ["Table of Contents", "1 INTRODUCTION......................7", "2 DRILLING........12"]
+    result = parse_document(make_pdf([toc]), "d", ocr_mode="off")
+    assert "1 INTRODUCTION … 7" in result.pages[0].text
+    assert "...." not in result.pages[0].text
