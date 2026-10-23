@@ -11,6 +11,7 @@ dependencies = [
     "openai>=3.28.0,<4",
     "pdfplumber>=0.11.10",
     "pydantic-settings>=2.16.1",
+    "python-multipart>=0.0.32",
     "rank-bm25>=0.2.2",
     "tiktoken>=0.14.0",
     "uvicorn[standard]>=0.54.0",
