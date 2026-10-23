@@ -121,3 +121,7 @@ def test_ocr_concurrency_defaults_to_one_and_must_be_positive() -> None:
     assert make_settings(ocr_concurrency=8).ocr_concurrency == 8
     with pytest.raises(ValidationError):
         make_settings(ocr_concurrency=0)
+
+
+def test_models_are_cached_under_data_by_default() -> None:
+    assert make_settings().models_dir == Path("data/models")
