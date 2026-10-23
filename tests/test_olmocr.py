@@ -136,6 +136,31 @@ def test_client_rejects_output_cut_off_by_the_token_limit() -> None:
         client.ocr_page(PNG, attempt=0)
 
 
+def test_client_treats_a_timeout_as_an_unfinished_page() -> None:
+    """A looping page can run past the timeout; that's about the page, not the server."""
+
+    def times_out(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ReadTimeout("read timed out", request=request)
+
+    client, _ = make_client(times_out)
+    with pytest.raises(OcrIncompleteError, match="timed out"):
+        client.ocr_page(PNG, attempt=0)
+
+
+def test_client_treats_a_proxy_timeout_as_an_unfinished_page() -> None:
+    """RunPod's proxy closes requests after 100 s with HTTP 524."""
+    client, _ = make_client(lambda _: httpx2.Response(524, text="A timeout occurred"))
+    with pytest.raises(OcrIncompleteError, match="524"):
+        client.ocr_page(PNG, attempt=0)
+
+
+def test_client_server_errors_are_not_unfinished_pages() -> None:
+    client, _ = make_client(lambda _: httpx2.Response(503, json={"error": {"message": "busy"}}))
+    with pytest.raises(OcrError) as excinfo:
+        client.ocr_page(PNG, attempt=0)
+    assert not isinstance(excinfo.value, OcrIncompleteError)
+
+
 def test_incomplete_output_is_still_an_ocr_error_so_it_is_retried() -> None:
     assert issubclass(OcrIncompleteError, OcrError)
 
