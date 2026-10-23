@@ -15,6 +15,8 @@ from rig_assist.ingestion.parsers.olmocr import (
     PROMPT,
     OcrError,
     OcrFailedError,
+    OcrIncompleteError,
+    OcrPageUnreadableError,
     OcrResult,
     OlmOcrClient,
     ocr_with_retries,
@@ -130,8 +132,12 @@ def test_client_turns_http_errors_into_ocr_error() -> None:
 
 def test_client_rejects_output_cut_off_by_the_token_limit() -> None:
     client, _ = make_client(lambda _: httpx2.Response(200, json=completion("partial", "length")))
-    with pytest.raises(OcrError, match="length"):
+    with pytest.raises(OcrIncompleteError, match="length"):
         client.ocr_page(PNG, attempt=0)
+
+
+def test_incomplete_output_is_still_an_ocr_error_so_it_is_retried() -> None:
+    assert issubclass(OcrIncompleteError, OcrError)
 
 
 # --- ocr_with_retries ---------------------------------------------------
@@ -192,3 +198,38 @@ def test_render_page_png_scales_the_longest_side(make_pdf: MakePdf) -> None:
 def test_render_page_png_rejects_a_page_out_of_range(make_pdf: MakePdf) -> None:
     with pytest.raises(ValueError, match="page 5"):
         render_page_png(make_pdf([["only page"]]), page=5)
+
+
+class ScriptedClient:
+    """Raises the given errors in order, then succeeds."""
+
+    def __init__(self, errors: list[OcrError]) -> None:
+        self.errors = errors
+        self.calls = 0
+
+    def ocr_page(self, png: bytes, attempt: int) -> OcrResult:
+        self.calls += 1
+        if self.calls <= len(self.errors):
+            raise self.errors[self.calls - 1]
+        return OcrResult(text="ok", input_tokens=1, output_tokens=1)
+
+
+def test_a_page_that_never_completes_is_reported_as_unreadable() -> None:
+    """e.g. a blank form where the model repeats empty table rows until the token limit."""
+    client = ScriptedClient([OcrIncompleteError("finish_reason=length")] * 3)
+    with pytest.raises(OcrPageUnreadableError, match="length"):
+        ocr_with_retries(client, PNG, max_attempts=3, sleep=lambda _: None)
+
+
+def test_unreadable_is_a_kind_of_failure() -> None:
+    assert issubclass(OcrPageUnreadableError, OcrFailedError)
+
+
+def test_server_errors_are_never_reported_as_unreadable() -> None:
+    """If any attempt failed for a server reason, the problem may not be the page."""
+    client = ScriptedClient(
+        [OcrError("HTTP 503"), OcrIncompleteError("length"), OcrIncompleteError("length")]
+    )
+    with pytest.raises(OcrFailedError) as excinfo:
+        ocr_with_retries(client, PNG, max_attempts=3, sleep=lambda _: None)
+    assert not isinstance(excinfo.value, OcrPageUnreadableError)

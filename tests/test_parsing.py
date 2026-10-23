@@ -8,7 +8,13 @@ import pytest
 from conftest import FakeOcr, no_sleep
 
 from rig_assist.ingestion.cache import PageCache
-from rig_assist.ingestion.parsers.olmocr import OcrError, OcrFailedError, OcrResult
+from rig_assist.ingestion.parsers.olmocr import (
+    OcrError,
+    OcrFailedError,
+    OcrIncompleteError,
+    OcrResult,
+    render_page_png,
+)
 from rig_assist.ingestion.parsing import parse_document
 
 MakePdf = Callable[[list[list[str]]], Path]
@@ -213,3 +219,30 @@ def test_concurrent_ocr_caches_every_page(four_pages: Path, tmp_path: Path) -> N
 def test_concurrency_below_one_is_rejected(four_pages: Path) -> None:
     with pytest.raises(ValueError, match="ocr_concurrency"):
         parse_document(four_pages, "d", "all", PageEchoOcr(), ocr_concurrency=0)
+
+
+def test_a_page_ocr_cannot_finish_is_reported_missing_and_the_rest_continue(
+    make_pdf: MakePdf, caplog: pytest.LogCaptureFixture
+) -> None:
+    """One looping page (e.g. a blank form) must not stop a 146-page run."""
+    blank_form = ["DOCUMENT CONTROL SHEET"]  # text differs, so its PNG differs from page 1's
+
+    class LoopsOnBlankForm(FakeOcr):
+        def __init__(self) -> None:
+            super().__init__()
+            self.form_png: bytes | None = None
+
+        def ocr_page(self, png: bytes, attempt: int) -> OcrResult:
+            if png == self.form_png:
+                raise OcrIncompleteError("incomplete output (finish_reason=length)")
+            return super().ocr_page(png, attempt)
+
+    path = make_pdf([SCANNED_PAGE, blank_form, SCANNED_PAGE])
+    ocr = LoopsOnBlankForm()
+    ocr.form_png = render_page_png(path, 2)
+
+    result = parse_document(path, "d", "all", ocr, sleep=no_sleep)
+
+    assert [p.page for p in result.pages] == [1, 3]
+    assert result.missing_pages == [2]
+    assert "page 2" in caplog.text and "length" in caplog.text
