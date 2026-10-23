@@ -9,15 +9,23 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 from rig_assist.config import Settings
 from rig_assist.ingestion.cache import PageCache, file_sha256
 from rig_assist.ingestion.chunking import chunk_pages
+from rig_assist.ingestion.models import Chunk
 from rig_assist.ingestion.parsers.olmocr import OcrClient, OlmOcrClient
 from rig_assist.ingestion.parsing import OcrMode, parse_document
 from rig_assist.ingestion.store import DocumentInfo, IndexStore
 
 logger = logging.getLogger(__name__)
+
+
+class DenseWriter(Protocol):
+    """The part of a dense index ingestion needs (DenseIndex, or a fake in tests)."""
+
+    def upsert_document(self, doc_id: str, chunks: list[Chunk]) -> None: ...
 
 
 def _split_camel_case(name: str) -> str:
@@ -58,8 +66,14 @@ def ingest_file(
     chunk_overlap: int = 50,
     sleep: Callable[[float], None] = time.sleep,
     ocr_concurrency: int = 1,
+    dense: DenseWriter | None = None,
 ) -> DocumentInfo:
-    """Parse, chunk and store one PDF, replacing any earlier version with the same doc_id."""
+    """Parse, chunk and store one PDF, replacing any earlier version with the same doc_id.
+
+    With `dense`, the chunks are also embedded into the vector index. That happens before
+    the store write: the store's document list is the "fully ingested" marker, so a
+    failure while embedding leaves the document unlisted and a re-run repairs it.
+    """
     doc_id, title = make_doc_id(path.name), make_title(path.name)
     result = parse_document(
         path, doc_id, ocr_mode, ocr_client, cache, sleep=sleep, ocr_concurrency=ocr_concurrency
@@ -74,6 +88,8 @@ def ingest_file(
         chunks=len(chunks),
         missing_pages=result.missing_pages,
     )
+    if dense is not None:
+        dense.upsert_document(doc_id, chunks)
     store.put(info, chunks)
     if result.ocr_pages or result.ocr_cached_pages:
         logger.info(
@@ -97,6 +113,7 @@ def ingest_directory(
     chunk_overlap: int = 50,
     sleep: Callable[[float], None] = time.sleep,
     ocr_concurrency: int = 1,
+    dense: DenseWriter | None = None,
 ) -> list[DocumentInfo]:
     """Ingest every *.pdf in `raw_dir` (not subfolders). Returns them sorted by doc_id."""
     pdfs = sorted(p for p in raw_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pdf")
@@ -121,6 +138,7 @@ def ingest_directory(
                 chunk_overlap,
                 sleep,
                 ocr_concurrency=ocr_concurrency,
+                dense=dense,
             )
         )
     return infos

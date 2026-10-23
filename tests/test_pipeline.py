@@ -208,5 +208,5 @@ def test_a_document_is_only_listed_once_both_indexes_are_written(
 ) -> None:
     store = IndexStore(tmp_path / "index")
     with pytest.raises(ConnectionError):
-        ingest_file(make_pdf([PUMP_PAGE]), store, dense=FailingDense())  # type: ignore[arg-type]
+        ingest_file(make_pdf([PUMP_PAGE]), store, dense=FailingDense())
     assert store.documents() == []

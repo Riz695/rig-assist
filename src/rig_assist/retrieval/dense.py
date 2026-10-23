@@ -11,8 +11,9 @@ from dataclasses import asdict
 
 from qdrant_client import QdrantClient, models
 
+from rig_assist.config import Settings
 from rig_assist.ingestion.models import Chunk
-from rig_assist.retrieval.embedder import Embedder
+from rig_assist.retrieval.embedder import Embedder, FastEmbedEmbedder
 from rig_assist.retrieval.models import ScoredChunk
 
 # Any fixed namespace works; changing it would change every point ID.
@@ -97,3 +98,14 @@ class DenseIndex:
         return self.client.count(
             self.collection, count_filter=_doc_filter(doc_id), exact=True
         ).count
+
+
+def make_dense_index(settings: Settings) -> DenseIndex:
+    """The real dense index: Qdrant at QDRANT_URL + the EMBEDDING_MODEL from MODELS_DIR."""
+    api_key = settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
+    # check_compatibility=False: otherwise the client calls the server when it's *created*
+    # (and warns if it's down), so building the app would depend on Qdrant being up.
+    # Versions are pinned instead: qdrant-client 1.19.x (pyproject) and server 1.19.2 (compose).
+    client = QdrantClient(url=settings.qdrant_url, api_key=api_key, check_compatibility=False)
+    embedder = FastEmbedEmbedder(settings.embedding_model, cache_dir=str(settings.models_dir))
+    return DenseIndex(client, settings.qdrant_collection, embedder)
