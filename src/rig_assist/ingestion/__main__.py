@@ -8,18 +8,11 @@ import argparse
 import logging
 import sys
 
-from rig_assist.config import Settings, get_settings
+from rig_assist.config import get_settings
 from rig_assist.ingestion.cache import PageCache
-from rig_assist.ingestion.parsers.olmocr import OcrClient, OcrFailedError, OlmOcrClient
-from rig_assist.ingestion.pipeline import ingest_directory
+from rig_assist.ingestion.parsers.olmocr import OcrFailedError
+from rig_assist.ingestion.pipeline import ingest_directory, make_ocr_client
 from rig_assist.ingestion.store import IndexStore
-
-
-def make_ocr_client(settings: Settings) -> OcrClient | None:
-    if settings.ocr_mode == "off" or not settings.ocr_base_url:
-        return None
-    key = settings.ocr_api_key.get_secret_value() if settings.ocr_api_key else None
-    return OlmOcrClient(settings.ocr_base_url, key, settings.ocr_model)
 
 
 def main(argv: list[str] | None = None) -> int:

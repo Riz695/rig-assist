@@ -10,9 +10,10 @@ from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
+from rig_assist.config import Settings
 from rig_assist.ingestion.cache import PageCache, file_sha256
 from rig_assist.ingestion.chunking import chunk_pages
-from rig_assist.ingestion.parsers.olmocr import OcrClient
+from rig_assist.ingestion.parsers.olmocr import OcrClient, OlmOcrClient
 from rig_assist.ingestion.parsing import OcrMode, parse_document
 from rig_assist.ingestion.store import DocumentInfo, IndexStore
 
@@ -37,6 +38,14 @@ def make_doc_id(filename: str) -> str:
 def make_title(filename: str) -> str:
     """'Drilling_Manual.pdf' → 'Drilling Manual'. PDF metadata titles are often empty or junk."""
     return " ".join(re.sub(r"[_-]+", " ", _split_camel_case(Path(filename).stem)).split())
+
+
+def make_ocr_client(settings: Settings) -> OcrClient | None:
+    """The OCR client described by the settings, or None when OCR is off."""
+    if settings.ocr_mode == "off" or not settings.ocr_base_url:
+        return None
+    key = settings.ocr_api_key.get_secret_value() if settings.ocr_api_key else None
+    return OlmOcrClient(settings.ocr_base_url, key, settings.ocr_model)
 
 
 def ingest_file(
