@@ -19,9 +19,16 @@ from rig_assist.ingestion.store import DocumentInfo, IndexStore
 logger = logging.getLogger(__name__)
 
 
+def _split_camel_case(name: str) -> str:
+    """'MarineOffshoreLogOps' → 'Marine Offshore Log Ops', 'RP54Guide' → 'RP54 Guide'."""
+    name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name)
+    return re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", name)  # acronym then word: "APIGuide"
+
+
 def make_doc_id(filename: str) -> str:
     """'Offshore manual.pdf' → 'offshore-manual'. Stable, URL- and file-name-safe."""
-    slug = re.sub(r"[^a-z0-9]+", "-", Path(filename).stem.lower()).strip("-")
+    words = _split_camel_case(Path(filename).stem)
+    slug = re.sub(r"[^a-z0-9]+", "-", words.lower()).strip("-")
     if not slug:
         raise ValueError(f"can't make a doc_id from {filename!r}: no letters or digits")
     return slug
@@ -29,7 +36,7 @@ def make_doc_id(filename: str) -> str:
 
 def make_title(filename: str) -> str:
     """'Drilling_Manual.pdf' → 'Drilling Manual'. PDF metadata titles are often empty or junk."""
-    return " ".join(re.sub(r"[_-]+", " ", Path(filename).stem).split())
+    return " ".join(re.sub(r"[_-]+", " ", _split_camel_case(Path(filename).stem)).split())
 
 
 def ingest_file(

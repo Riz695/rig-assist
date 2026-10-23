@@ -25,6 +25,8 @@ BOP_PAGE = ["5.1 Blowout Preventer", "Close the annular preventer on a kick."]
             "an-introduction-to-oilfield-drilling-operations",
         ),
         ("  Pump  (rev 2).PDF", "pump-rev-2"),
+        ("MarineOffshoreLogOpsManual.pdf", "marine-offshore-log-ops-manual"),
+        ("API_RP54Guide.pdf", "api-rp54-guide"),
     ],
 )
 def test_make_doc_id_turns_file_names_into_slugs(filename: str, doc_id: str) -> None:
@@ -45,6 +47,7 @@ def test_make_doc_id_rejects_names_without_letters_or_digits() -> None:
             "An Introduction To Oilfield Drilling Operations",
         ),
         ("Offshore manual.pdf", "Offshore manual"),
+        ("MarineOffshoreLogOpsManual.pdf", "Marine Offshore Log Ops Manual"),
     ],
 )
 def test_make_title_is_the_readable_file_name(filename: str, title: str) -> None:
