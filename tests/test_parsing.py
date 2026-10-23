@@ -225,7 +225,8 @@ def test_a_page_ocr_cannot_finish_is_reported_missing_and_the_rest_continue(
     make_pdf: MakePdf, caplog: pytest.LogCaptureFixture
 ) -> None:
     """One looping page (e.g. a blank form) must not stop a 146-page run."""
-    blank_form = ["DOCUMENT CONTROL SHEET"]  # text differs, so its PNG differs from page 1's
+    # Under 10 letters/digits: no usable text layer, but its image differs from a blank page.
+    blank_form = ["FORM"]
 
     class LoopsOnBlankForm(FakeOcr):
         def __init__(self) -> None:
@@ -241,8 +242,19 @@ def test_a_page_ocr_cannot_finish_is_reported_missing_and_the_rest_continue(
     ocr = LoopsOnBlankForm()
     ocr.form_png = render_page_png(path, 2)
 
-    result = parse_document(path, "d", "all", ocr, sleep=no_sleep)
+    result = parse_document(path, "d", "missing", ocr, sleep=no_sleep)
 
     assert [p.page for p in result.pages] == [1, 3]
     assert result.missing_pages == [2]
     assert "page 2" in caplog.text and "length" in caplog.text
+
+
+def test_unreadable_page_falls_back_to_its_text_layer_when_it_has_one(make_pdf: MakePdf) -> None:
+    class AlwaysLoops(FakeOcr):
+        def ocr_page(self, png: bytes, attempt: int) -> OcrResult:
+            raise OcrIncompleteError("incomplete output (finish_reason=length)")
+
+    result = parse_document(make_pdf([TEXT_PAGE]), "d", "all", AlwaysLoops(), sleep=no_sleep)
+
+    assert [(p.page, p.parser) for p in result.pages] == [(1, "pdfplumber")]
+    assert result.missing_pages == []
