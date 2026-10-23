@@ -8,7 +8,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 - **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
-- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. **Next:** ingestion writes to both indexes (idempotency test first), then reranker, `/search` modes, `v1_baseline`.
+- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. **Next:** cross-encoder reranker (measure bge-reranker-base's CPU speed first), then `/search` modes (API gets Qdrant + uploads write both), `v1_baseline`.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -59,6 +59,7 @@ Branch `phase-2-hybrid`.
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
 | RRF fusion + `HybridRetriever` (ported from v1) | `b6865dd` test → `b026266` feat | `Tasks/P2 - RRF and hybrid retriever.md` |
+| Ingestion into both indexes (store + Qdrant), `make ingest` checks Qdrant / `--skip-dense`, `MODELS_DIR` | `5cfd819` test → `6b5bada` feat → `46d08e0` chore | `Tasks/P2 - Ingestion into both indexes.md` |
 | Dense retrieval: fastembed embedder, Qdrant `DenseIndex`, Qdrant in compose; dot-leader cleaning (truncation fix) | `1ad5f24` test → `52ec3d1` feat; `14a62c9` test → `1e59ada` feat; `793ecbe` feat (compose) | `Tasks/P2 - Dense retrieval with Qdrant.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
@@ -101,6 +102,7 @@ Branch `phase-2-hybrid`.
 - 2026-10-23: RRF: `reciprocal_rank_fusion(lists, k=60, top_n)`, ties by chunk_id; `HybridRetriever` asks each retriever for `k_each=20` and keeps the dense cosine score on fused results (`ScoredChunk.dense_score`) for Phase 3's "not found" threshold. `Retriever` protocol = `search(query, k) -> list[ScoredChunk]`.
 - 2026-10-23: Dense: fastembed 0.9.0 `BAAI/bge-small-en-v1.5` (384-dim, 67 MB quantized ONNX, loaded on first use); qdrant-client 1.19.1 + server `v1.19.2-unprivileged` (same minor; 1.20.0 was a day old). Point id = UUID5(chunk_id), payload = Chunk; re-ingest = delete the doc's points then upsert. **No query prefix** by default (v1 used none and fastembed adds none); `FastEmbedEmbedder(query_prefix=...)` lets Phase 3 test BAAI's "Represent this sentence for searching relevant passages: ". Real run: 1,316 chunks embedded in 272 s on CPU (206 ms/chunk), queries 70–110 ms.
 - 2026-10-23: **Embedding truncation measured** (Phase 1 open question): 46/1,328 chunks (3.5%) were over bge's 512 WordPiece tokens, losing 7.8% of all tokens. Cause: dot leaders in tables of contents (one WordPiece token per dot; a 487-cl100k-token TOC chunk was 4,909 bge tokens) and OCR HTML tables. Fix: collapse runs of 4+ dots to "…" in cleaning → 22 chunks (1.7%), 0.57% of tokens cut, max 770; all remaining in the scanned manual's HTML tables (Phase 3 candidate: HTML→Markdown tables or a smaller chunk size).
+- 2026-10-23: Ingestion writes the dense index **before** the chunk store (the store's document list = "fully ingested" marker). `make ingest` needs Qdrant (checked up front, fails in ~2 s with "docker compose up -d qdrant"); `--skip-dense` = BM25 only. Real runs: 1,316 chunks → 1,316 Qdrant points, twice (idempotent), ~300 s each (embedding dominates). Model cached in `data/models/` (65 MB). `QdrantClient(check_compatibility=False)` so creating it doesn't call the server (versions pinned instead).
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -136,5 +138,5 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - OCR: rotated pages not handled (olmOCR returns `is_rotation_valid`/`rotation_correction`; its pipeline re-renders rotated). Cache key doesn't include model/prompt version. Check both once real output exists.
 - A PDF deleted from `data/raw/` stays in the index (`IndexStore` has no `remove`). Add with the delete/upload API if needed.
 - No upload size limit on `POST /documents` (would return 413); no document delete endpoint.
-- fastembed caches models in `/tmp/fastembed_cache` by default (lost on reboot; not persisted in the container): set a cache dir (e.g. `data/models/`, gitignored) when wiring the API's dense mode.
+- Re-ingesting unchanged manuals re-embeds everything (~5 min). Could skip documents whose file hash and pipeline settings are unchanged; not needed yet.
 - No readiness check yet (would check Qdrant/index); add when those dependencies exist.
