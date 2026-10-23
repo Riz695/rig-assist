@@ -105,3 +105,29 @@ def test_search_on_empty_index_returns_empty() -> None:
 def test_index_reports_its_size(index: BM25Index) -> None:
     assert len(index) == 5
     assert len(BM25Index.build([])) == 0
+
+
+# --- small corpora ------------------------------------------------------
+
+
+def test_search_works_on_a_two_chunk_index() -> None:
+    """Okapi's IDF is exactly 0 for a term in 1 of 2 chunks, so nothing would be found.
+
+    A fresh install with one small uploaded manual must still be searchable.
+    """
+    index = BM25Index.build(
+        [make_chunk("Check the pump liners every shift", 1), make_chunk("Close the annular", 2)]
+    )
+    results = index.search("annular", k=5)
+    assert [r.chunk.page for r in results] == [2]
+    assert results[0].score > 0
+
+
+def test_search_works_on_a_single_chunk_index() -> None:
+    index = BM25Index.build([make_chunk("Close the annular preventer", 1)])
+    assert [r.chunk.page for r in index.search("annular", k=5)] == [1]
+
+
+def test_a_term_found_in_most_chunks_still_scores_above_zero(chunks: list[Chunk]) -> None:
+    common = [make_chunk(f"pump note {i}", page=i) for i in range(1, 5)] + chunks
+    assert all(r.score > 0 for r in BM25Index.build(common).search("pump", k=10))
