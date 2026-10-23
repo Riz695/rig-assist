@@ -8,7 +8,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 - **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
-- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. **Next:** cross-encoder reranker (measure bge-reranker-base's CPU speed first), then `/search` modes (API gets Qdrant + uploads write both), `v1_baseline`.
+- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). **Next:** `/search` modes `bm25 | dense | hybrid | hybrid_rerank` (API gets Qdrant + uploads write both), then `v1_baseline`.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -61,6 +61,7 @@ Branch `phase-2-hybrid`.
 | RRF fusion + `HybridRetriever` (ported from v1) | `b6865dd` test → `b026266` feat | `Tasks/P2 - RRF and hybrid retriever.md` |
 | Ingestion into both indexes (store + Qdrant), `make ingest` checks Qdrant / `--skip-dense`, `MODELS_DIR` | `5cfd819` test → `6b5bada` feat → `46d08e0` chore | `Tasks/P2 - Ingestion into both indexes.md` |
 | Dense retrieval: fastembed embedder, Qdrant `DenseIndex`, Qdrant in compose; dot-leader cleaning (truncation fix) | `1ad5f24` test → `52ec3d1` feat; `14a62c9` test → `1e59ada` feat; `793ecbe` feat (compose) | `Tasks/P2 - Dense retrieval with Qdrant.md` |
+| Cross-encoder reranker: `CrossEncoder` protocol, `FastEmbedCrossEncoder`, `RerankRetriever` (top-20 candidates); CPU speed measured | `2826762` test → `06f8733` feat | `Tasks/P2 - Cross-encoder reranker.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -103,6 +104,7 @@ Branch `phase-2-hybrid`.
 - 2026-10-23: Dense: fastembed 0.9.0 `BAAI/bge-small-en-v1.5` (384-dim, 67 MB quantized ONNX, loaded on first use); qdrant-client 1.19.1 + server `v1.19.2-unprivileged` (same minor; 1.20.0 was a day old). Point id = UUID5(chunk_id), payload = Chunk; re-ingest = delete the doc's points then upsert. **No query prefix** by default (v1 used none and fastembed adds none); `FastEmbedEmbedder(query_prefix=...)` lets Phase 3 test BAAI's "Represent this sentence for searching relevant passages: ". Real run: 1,316 chunks embedded in 272 s on CPU (206 ms/chunk), queries 70–110 ms.
 - 2026-10-23: **Embedding truncation measured** (Phase 1 open question): 46/1,328 chunks (3.5%) were over bge's 512 WordPiece tokens, losing 7.8% of all tokens. Cause: dot leaders in tables of contents (one WordPiece token per dot; a 487-cl100k-token TOC chunk was 4,909 bge tokens) and OCR HTML tables. Fix: collapse runs of 4+ dots to "…" in cleaning → 22 chunks (1.7%), 0.57% of tokens cut, max 770; all remaining in the scanned manual's HTML tables (Phase 3 candidate: HTML→Markdown tables or a smaller chunk size).
 - 2026-10-23: Ingestion writes the dense index **before** the chunk store (the store's document list = "fully ingested" marker). `make ingest` needs Qdrant (checked up front, fails in ~2 s with "docker compose up -d qdrant"); `--skip-dense` = BM25 only. Real runs: 1,316 chunks → 1,316 Qdrant points, twice (idempotent), ~300 s each (embedding dominates). Model cached in `data/models/` (65 MB). `QdrantClient(check_compatibility=False)` so creating it doesn't call the server (versions pinned instead).
+- 2026-10-24: **Reranker CPU speed measured** (12 threads, 20 real BM25 candidates/query, 5 queries): `BAAI/bge-reranker-base` (1.04 GB fp32 ONNX) **~10.7 s/query**, 2.7 GB peak RAM; `Xenova/ms-marco-MiniLM-L-6-v2` (80 MB) ~2.4 s, 1.4 GB; `jinaai/jina-reranker-v1-tiny-en` (130 MB) ~2.0 s, 1.4 GB. bge-base stays the default (`RERANKER_MODEL`, plan), fine for offline eval (~11 min for 60 questions) but slow for a live demo, worse on 1–2 vCPU Azure. **Phase 3:** compare Hit@1/MRR **and** latency for the three models (and 10 vs 20 candidates) before picking the served one. Logits observed -5.7..+2.4 (bge-base); `RerankRetriever` keeps `dense_score` for the threshold. Integration test uses MiniLM (80 MB) to keep CI downloads small.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
