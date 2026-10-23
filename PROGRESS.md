@@ -8,7 +8,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 - **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
-- **Next:** RRF fusion (tests first), then dense retrieval (fastembed + Qdrant), ingestion into both indexes, reranker, `/search` modes, `v1_baseline`.
+- Done: RRF + `HybridRetriever`. **Next:** dense retrieval (fastembed + Qdrant, check current docs first), ingestion into both indexes, reranker, `/search` modes, `v1_baseline`.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -52,6 +52,14 @@ Branch `phase-1-api`.
 | Docker: multi-stage `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `make up/down`, CI image check; `.env` inline-comment fix | `d3beef8` fix → `e0bd443` feat → `de904e2` ci | `Tasks/P1 - Docker and docker compose.md` |
 | OCR on a rented GPU: guide, concurrent OCR (`OCR_CONCURRENCY`), unfinished pages reported missing (token limit, timeouts, 524) | `44dc645`, `c350001` docs; `ab48067` test → `22babc9` test → `7cfb56e` feat; `9044ddc` → `67ee4f1` test → `3f3e458` feat; `30671a9` test → `967e501` feat | `Tasks/P1 - OCR on a rented GPU.md` |
 
+## Phase 2: Hybrid retrieval + rerank
+
+Branch `phase-2-hybrid`.
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
+| RRF fusion + `HybridRetriever` (ported from v1) | `b6865dd` test → `b026266` feat | `Tasks/P2 - RRF and hybrid retriever.md` |
+
 ## Decisions made during the project (beyond PLAN.md)
 
 - 2026-10-20: Applied plan fixes #2 (fastembed instead of sentence-transformers), #3 (Qdrant Cloud free tier in prod), #5 (Langfuse Cloud, not self-hosted), #7 (`llama-index-core` for chunking only; PDF parser chosen in Phase 1), #9 (LLM-as-judge as primary answer metric). Already written into `PLAN.md`.
@@ -89,6 +97,7 @@ Branch `phase-1-api`.
 - 2026-10-23: Docker Compose parses `KEY=   # comment` as the value `# comment` (python-dotenv gives `""`): comments for empty values now sit on their own line in `.env.example` and the user's `.env`; pre-commit rule `no-inline-comment-on-empty-env-value` enforces it. Check what containers get with `docker compose config`.
 - 2026-10-23: Local Docker: Docker Desktop must be running (`systemctl --user start docker-desktop`) and the context set (`docker context use desktop-linux`, now the default). Its credential store (`credsStore: desktop` → pass → GPG) needs the GPG passphrase for Docker Hub pulls: run one `docker pull` in an interactive terminal first; non-interactive builds then work while gpg-agent caches it.
 - 2026-10-23: `sbx` cloud facts: shell sandbox = Ubuntu 26.04, 2 CPU / 3.8 GiB / 20 GB, Python 3.14, uv 0.13.4, Docker 29.9 + Compose. Create 8 s, resume 4 s, copy ~1.2 MB/s, `make ingest` 54 s (laptop 58 s) with a byte-identical index. Secrets: custom secrets put a placeholder in the env and the proxy sets the header on requests to an exact host; **they attach only at sandbox creation**. Docker Hub pulls need `production.cloudfront.docker.com` allowed.
+- 2026-10-23: RRF: `reciprocal_rank_fusion(lists, k=60, top_n)`, ties by chunk_id; `HybridRetriever` asks each retriever for `k_each=20` and keeps the dense cosine score on fused results (`ScoredChunk.dense_score`) for Phase 3's "not found" threshold. `Retriever` protocol = `search(query, k) -> list[ScoredChunk]`.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
