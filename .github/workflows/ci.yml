@@ -43,3 +43,22 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked
       - run: make test
+
+  docker:
+    # Build the API image and check that the container starts and answers /health.
+    # No push: publishing images comes with deployment (Phase 8).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -t rig-assist-api:ci .
+      - name: Start the container and wait for /health
+        run: |
+          docker run -d --name api -p 8000:8000 rig-assist-api:ci
+          for i in $(seq 30); do
+            if curl -fsS http://localhost:8000/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs api
+          exit 1
+      - name: Runs as a non-root user
+        run: test "$(docker exec api id -u)" != "0"
