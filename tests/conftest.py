@@ -1,5 +1,6 @@
 """Shared test helpers."""
 
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -71,13 +72,16 @@ class FakeOcr:
         self.text = text
         self.fail = fail
         self.calls = 0
+        self._lock = threading.Lock()  # pages may be OCR'd from several threads
 
     def ocr_page(self, png: bytes, attempt: int) -> OcrResult:
         assert png.startswith(b"\x89PNG"), "OCR must receive a rendered PNG"
-        self.calls += 1
+        with self._lock:
+            self.calls += 1
+            call = self.calls
         if self.fail:
             raise OcrError("503 service unavailable")
-        return OcrResult(text=f"{self.text} ({self.calls})", input_tokens=2000, output_tokens=500)
+        return OcrResult(text=f"{self.text} ({call})", input_tokens=2000, output_tokens=500)
 
 
 def no_sleep(_: float) -> None:

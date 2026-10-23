@@ -114,3 +114,10 @@ def test_ocr_settings_are_read_from_the_environment(monkeypatch: pytest.MonkeyPa
 def test_unknown_ocr_mode_is_rejected() -> None:
     with pytest.raises(ValidationError):
         make_settings(ocr_mode="sometimes")
+
+
+def test_ocr_concurrency_defaults_to_one_and_must_be_positive() -> None:
+    assert make_settings().ocr_concurrency == 1
+    assert make_settings(ocr_concurrency=8).ocr_concurrency == 8
+    with pytest.raises(ValidationError):
+        make_settings(ocr_concurrency=0)

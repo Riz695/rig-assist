@@ -1,3 +1,6 @@
+import hashlib
+import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -128,3 +131,73 @@ def test_running_headers_are_stripped(make_pdf: MakePdf) -> None:
     pages = [["Marine Operations Manual UKCS-MAL-001", f"Section about the {w}"] for w in words]
     result = parse_document(make_pdf(pages), "d", ocr_mode="off")
     assert all("UKCS-MAL-001" not in p.text for p in result.pages)
+
+
+# --- concurrency ------------------------------------------------------------
+
+
+class PageEchoOcr:
+    """Answer depends only on the image, so results can't depend on thread timing.
+
+    Also records how many calls were in flight at once.
+    """
+
+    def __init__(self, delay: float = 0.05) -> None:
+        self.delay = delay
+        self.in_flight = 0
+        self.max_in_flight = 0
+        self._lock = threading.Lock()
+
+    def ocr_page(self, png: bytes, attempt: int) -> OcrResult:
+        with self._lock:
+            self.in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        time.sleep(self.delay)  # long enough for other threads to start
+        with self._lock:
+            self.in_flight -= 1
+        digest = hashlib.sha256(png).hexdigest()[:12]
+        return OcrResult(text=f"Text of page image {digest}", input_tokens=10, output_tokens=5)
+
+
+@pytest.fixture
+def four_pages(make_pdf: MakePdf) -> Path:
+    return make_pdf([[f"Page about the {w} system"] for w in ("mud", "bop", "riser", "crane")])
+
+
+def test_concurrent_ocr_gives_the_same_pages_in_the_same_order(four_pages: Path) -> None:
+    one = parse_document(four_pages, "d", "all", PageEchoOcr(), ocr_concurrency=1)
+    four = parse_document(four_pages, "d", "all", PageEchoOcr(), ocr_concurrency=4)
+
+    assert four.pages == one.pages
+    assert [p.page for p in four.pages] == [1, 2, 3, 4]
+    assert len({p.text for p in four.pages}) == 4, "each page got its own OCR text"
+    assert (four.ocr_pages, four.input_tokens) == (4, 40)
+
+
+def test_concurrency_sends_several_pages_at_once(four_pages: Path) -> None:
+    sequential, parallel = PageEchoOcr(), PageEchoOcr()
+    parse_document(four_pages, "d", "all", sequential, ocr_concurrency=1)
+    parse_document(four_pages, "d", "all", parallel, ocr_concurrency=4)
+
+    assert sequential.max_in_flight == 1
+    assert parallel.max_in_flight > 1
+
+
+def test_concurrent_ocr_failure_still_names_the_page(make_pdf: MakePdf) -> None:
+    path = make_pdf([SCANNED_PAGE, SCANNED_PAGE, SCANNED_PAGE])
+    with pytest.raises(OcrFailedError, match=r"manual\.pdf page \d.*503"):
+        parse_document(path, "d", "missing", FakeOcr(fail=True), sleep=no_sleep, ocr_concurrency=3)
+
+
+def test_concurrent_ocr_caches_every_page(four_pages: Path, tmp_path: Path) -> None:
+    cache = PageCache(tmp_path / "parsed")
+    parse_document(four_pages, "d", "all", PageEchoOcr(), cache=cache, ocr_concurrency=4)
+
+    again = FakeOcr()
+    parse_document(four_pages, "d", "all", again, cache=cache, ocr_concurrency=4)
+    assert again.calls == 0
+
+
+def test_concurrency_below_one_is_rejected(four_pages: Path) -> None:
+    with pytest.raises(ValueError, match="ocr_concurrency"):
+        parse_document(four_pages, "d", "all", PageEchoOcr(), ocr_concurrency=0)
