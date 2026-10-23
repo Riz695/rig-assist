@@ -47,7 +47,7 @@ Branch `phase-1-api`.
 | Secret guard: pre-commit hook blocking values in `.env.example` | `de94f5e` chore | (in `Concepts/Environment variables and config.md`) |
 | Index store + ingestion pipeline + `make ingest` | `ebf3b91` test → `6e77488` feat → `84d2795` refactor → `b444800` feat → `f53d4c9` fix | `Tasks/P1 - Ingestion pipeline and index store.md` |
 | API: `POST/GET /documents`, `POST /search`; BM25 Lucene IDF fix | `d59dd9c` test → `ada9523` test → `5ba332e` fix → `d202314` feat | `Tasks/P1 - Documents and search API.md` |
-| `sbx` verification + `docs/cloud-jobs.md` | (docs commit below) | `Tasks/P1 - Cloud sandboxes for long jobs.md` |
+| `sbx` verification + `docs/cloud-jobs.md` | `2d785a8` docs | `Tasks/P1 - Cloud sandboxes for long jobs.md` |
 | Docker: multi-stage `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `make up/down`, CI image check; `.env` inline-comment fix | `d3beef8` fix → `e0bd443` feat → `de904e2` ci | `Tasks/P1 - Docker and docker compose.md` |
 | OCR on a rented GPU: guide, concurrent OCR (`OCR_CONCURRENCY`), unfinished pages reported missing (token limit, timeouts, 524) | `44dc645`, `c350001` docs; `ab48067` test → `22babc9` test → `7cfb56e` feat; `9044ddc` → `67ee4f1` test → `3f3e458` feat; `30671a9` test → `967e501` feat | `Tasks/P1 - OCR on a rented GPU.md` |
 
