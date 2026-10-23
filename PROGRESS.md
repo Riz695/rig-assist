@@ -5,9 +5,10 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 0 (Scaffold): **done.** [PR #1](https://github.com/Riz695/rig-assist/pull/1) merged into `main` on 2026-10-21 (merged by Claude at the user's request, with a merge commit so the test-first history is kept).
-- **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21: v1 described accurately; pivot adopted (olmOCR 2 ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). `PLAN.md` on `main` is the plan to follow.
-- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser, OCR client + page cache + routing, ingestion pipeline + `make ingest`. OCR done on a rented GPU (all 982 pages cached in `data/parsed/`, scanned manual searchable). API, Docker and compose done; **Phase 1 acceptance passed 2026-10-23** (compose up → healthy → Swagger → upload 201 → /search with page numbers; all 6 manuals searchable incl. the scanned one). `sbx` verified and `docs/cloud-jobs.md` written (user chose to do it now). **Phase 1 PR: [#3](https://github.com/Riz695/rig-assist/pull/3), awaiting the user's review** (don't merge it myself). Then Phase 2 on a new branch `phase-2-hybrid`. Still to log: final RunPod cost.
+- **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23.
+- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
+- **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
+- **Next:** RRF fusion (tests first), then dense retrieval (fastembed + Qdrant), ingestion into both indexes, reranker, `/search` modes, `v1_baseline`.
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -102,7 +103,7 @@ Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any r
 | | | | | | $250.00 |
 | 2026-10-23 | `sbx` verification: 2 shell sandboxes (install, tests, ingest, Qdrant, secret test) | 2 CPU / 4 GiB | ~0.13 (8 min) | < $0.15 (est.; check Docker billing) | ~$249.85 (est.) |
 
-OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time incl. setup and debugging. **Provisional (user, 2026-10-23): RunPod showed $1.236 billed; balance went from $10.00 to $7.87 ($2.13). Billing lags ~1 h; final figure to follow.**
+OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time incl. setup and debugging. **Final (RunPod daily billing CSV, 2026-10-23): $1.563 total = GPU $1.551 + storage $0.012.** The user's balance dropped $2.13 ($10.00 → $7.87); the extra ~$0.57 isn't in the billing summary (pending hold or later charge; user to check if it doesn't return).
 
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
 
