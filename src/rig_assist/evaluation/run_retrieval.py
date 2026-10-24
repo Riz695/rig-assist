@@ -1,8 +1,10 @@
 """Run the frozen eval set through every retrieval config, track each run, write the report.
 
-`make eval` runs `main()`. Configs: v2's four search modes on the main index, and the two
-v1 baselines on their own indexes (see `rig_assist.v1_baseline`). Every number in the
-report has a tracked run with the same params (git commit, eval-set hash, index contents).
+`make eval` runs `main()`. Configs: v2's four search modes on the main index, the same
+modes on each index variant (`olmocr_all_<mode>`, for the parser comparison; see
+`rig_assist.ingestion.variants`), and the two v1 baselines on their own indexes (see
+`rig_assist.v1_baseline`). Every number in the report has a tracked run with the same
+params (git commit, eval-set hash, index contents).
 """
 
 import argparse
@@ -33,6 +35,12 @@ from rig_assist.evaluation.retrieval_eval import (
 from rig_assist.evaluation.tracking import MlflowTracker, NullTracker, Tracker
 from rig_assist.ingestion.cache import PageCache
 from rig_assist.ingestion.store import IndexStore
+from rig_assist.ingestion.variants import (
+    INDEX_VARIANTS,
+    IndexVariant,
+    variant_collection,
+    variant_store_dir,
+)
 from rig_assist.retrieval.dense import make_dense_index
 from rig_assist.retrieval.models import Retriever
 from rig_assist.retrieval.rerank import FastEmbedCrossEncoder
@@ -51,7 +59,12 @@ WARM_UP_QUERY = "warm-up query: load the models before timing"
 # The manual with no text layer: its text only exists through OCR (PLAN.md, Phase 1).
 SCANNED_DOCS = frozenset({"marine-offshore-log-ops-manual"})
 SUBSETS = ("table", "scanned", "paraphrased", "manual_wording")
-ALL_CONFIGS = (*SEARCH_MODES, *V1_CONFIGS)
+VARIANT_CONFIGS = tuple(f"{variant}_{mode}" for variant in INDEX_VARIANTS for mode in SEARCH_MODES)
+ALL_CONFIGS = (*SEARCH_MODES, *VARIANT_CONFIGS, *V1_CONFIGS)
+# The `parser` param: the main index uses pdfplumber wherever there is a text layer
+# (olmOCR only for pages without one); a variant's parser is in its name.
+MAIN_PARSER = "pdfplumber"
+VARIANT_PARSER: dict[IndexVariant, str] = {"olmocr_all": "olmocr"}
 
 
 @dataclass(frozen=True)
@@ -173,6 +186,7 @@ def render_report(results: Sequence[ConfigResult], title: str, notes: Sequence[s
                 f"| {r.name} | {_count(s.hit_at_1, s.n)} | {_count(s.hit_at_5, s.n)} | "
                 f"{s.mrr_at_10:.3f} |"
             )
+    lines += _parser_comparison(results)
     lines += [
         "",
         '## Refusal ("not found")',
@@ -199,6 +213,39 @@ def render_report(results: Sequence[ConfigResult], title: str, notes: Sequence[s
     return "\n".join(lines) + "\n"
 
 
+def _parser_comparison(results: Sequence[ConfigResult]) -> list[str]:
+    """Rows per (mode, parser) for the modes that were run with more than one parser."""
+    by_mode: dict[str, list[ConfigResult]] = {}
+    for r in results:
+        if "parser" in r.params:
+            by_mode.setdefault(r.params["mode"], []).append(r)
+    compared = {mode: rows for mode, rows in by_mode.items() if len(rows) > 1}
+    if not compared:
+        return []
+    lines = [
+        "",
+        "## Parser comparison",
+        "",
+        "Same questions, same retrieval; only the page text differs. `pdfplumber` = the "
+        "main index (text layer; olmOCR only for pages without one), `olmocr` = olmOCR "
+        "text for every page. The scanned manual is olmOCR text in both.",
+        "",
+        "| mode | parser | Hit@5 | MRR@10 | table Hit@5 | table MRR@10 "
+        "| scanned Hit@5 | scanned MRR@10 |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for mode, rows in compared.items():
+        for r in rows:
+            cells = []
+            for subset in ("all", "table", "scanned"):
+                s = r.summaries.get(subset)
+                cells += (
+                    ["n/a", "n/a"] if s is None else [_count(s.hit_at_5, s.n), f"{s.mrr_at_10:.3f}"]
+                )
+            lines.append(f"| {mode} | {r.params['parser']} | {' | '.join(cells)} |")
+    return lines
+
+
 # --- Real configs (CLI) ----------------------------------------------------
 
 
@@ -217,20 +264,33 @@ def _index_params(store: IndexStore) -> dict[str, str]:
 def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
     configs = []
     common = {"embedding_model": settings.embedding_model, "rrf_k": "60", "k_each": "20"}
-    if any(name in SEARCH_MODES for name in names):
-        store = IndexStore(settings.data_index_dir)
-        cross_encoder = FastEmbedCrossEncoder(
-            settings.reranker_model, cache_dir=str(settings.models_dir)
+    cross_encoder = FastEmbedCrossEncoder(
+        settings.reranker_model, cache_dir=str(settings.models_dir)
+    )
+    # (config name prefix, chunk store, Qdrant collection, parser) for each v2 index
+    v2_indexes = [("", settings.data_index_dir, settings.qdrant_collection, MAIN_PARSER)]
+    for variant in INDEX_VARIANTS:
+        v2_indexes.append(
+            (
+                f"{variant}_",
+                variant_store_dir(settings.data_index_dir, variant),
+                variant_collection(settings.qdrant_collection, variant),
+                VARIANT_PARSER[variant],
+            )
         )
-        index = SearchIndex(store, make_dense_index(settings), cross_encoder)
-        for mode in SEARCH_MODES:
-            if mode not in names:
-                continue
+    for prefix, store_dir, collection, parser in v2_indexes:
+        modes = [mode for mode in SEARCH_MODES if prefix + mode in names]
+        if not modes:
+            continue
+        store = IndexStore(store_dir)
+        dense = make_dense_index(settings.model_copy(update={"qdrant_collection": collection}))
+        index = SearchIndex(store, dense, cross_encoder)
+        for mode in modes:
             params = {**common, **_index_params(store), "mode": mode, "bm25_idf": "lucene"}
-            params["qdrant_collection"] = settings.qdrant_collection
+            params |= {"qdrant_collection": collection, "parser": parser}
             if mode == "hybrid_rerank":
                 params |= {"reranker_model": settings.reranker_model, "rerank_candidates": "20"}
-            configs.append(EvalConfig(mode, index.retriever(mode), params))
+            configs.append(EvalConfig(prefix + mode, index.retriever(mode), params))
     for config in V1_CONFIGS:
         if config not in names:
             continue
@@ -274,7 +334,8 @@ def main(argv: list[str] | None = None) -> int:
     for config in configs:
         if config.params["index_chunks"] == "0":
             print(
-                f"{config.name}: index is empty; run make ingest / make ingest-v1", file=sys.stderr
+                f"{config.name}: index is empty; run make ingest / ingest-olmocr / ingest-v1",
+                file=sys.stderr,
             )
             return 1
     tracker: Tracker = (
