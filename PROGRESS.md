@@ -80,6 +80,8 @@ Branch `phase-3-eval`. The most important phase for the portfolio (see `PLAN.md`
 
 State of the data on 2026-10-24 (all local, gitignored; rebuild commands in brackets):
 - v2 main index: 6 docs, 1,316 chunks in `data/index/` + Qdrant `rig_assist_chunks` (`make ingest`, ~5 min).
+- olmOCR-all variant (parser comparison): 1,273 chunks in `data/index/variants/olmocr_all/` + Qdrant `rig_assist_chunks__olmocr_all` (`make ingest-olmocr`, ~5 min, OCR cache only).
+- MLflow runs: `data/mlflow/mlflow.db` + `data/mlflow/artifacts/` (`make mlflow-ui`); experiment `retrieval-eval`, latest full run at commit `ad52b00` (10 configs, 17.5 min).
 - v1 baselines: `v1_baseline` 1,142 chunks, `v1_retrieval_on_v2_pages` 1,296, in `data/index/baselines/<config>/` + Qdrant `rig_assist_chunks__<config>` (`make ingest-v1`, ~10 min).
 - OCR cache: all 982 pages in `data/parsed/` (olmOCR 2). `.env` now has `OCR_MODE=missing` (user, 2026-10-24), matching how both v2 indexes were built; cached pages cost nothing.
 - Models cached in `data/models/`: bge-small, bge-reranker-base (1 GB), MiniLM-L6, jina-tiny.
@@ -90,6 +92,15 @@ Order of work (from `PLAN.md`):
 2. **Build `eval/questions.jsonl`** (40–60 entries) by reading the manuals directly: PDF page numbers (1-based, not printed numbers), paraphrased questions (~30% different vocabulary), spread over all 6 manuals incl. the scanned one and table pages, mixed types, ~10% unanswerable. Evidence quotes from the text layer, or from the OCR cache for scanned pages. Write `eval/README.md`. **Print 10 random questions with evidence and stop for the user's spot-check before using the set. Then freeze it** (changes only with a reason in `eval/CHANGELOG.md`).
 3. **Check MLflow's current docs, pin it**, then `run_retrieval_eval.py`: Hit@1, Hit@5, MRR@10, p50/p95 latency for `bm25`, `dense`, `hybrid`, `hybrid_rerank`, `v1_baseline`, `v1_retrieval_on_v2_pages`; per parser and for table / scanned-manual questions; "not found" threshold: v1's fixed 0.6 vs one chosen on the set (note the tuning-on-test-set risk). Log runs to MLflow; commit Markdown tables to `eval/results/`; make `make eval` work. Use a Docker Cloud Sandbox if the sweep is slow (estimate; ask above $20).
 4. Answer eval (`run_answer_eval.py`) comes **after Phase 4**.
+
+**Done so far (2026-10-24):** steps 1–3 and the parser comparison (task table below). **Resume here (next session):**
+1. Reranker choice: bge-reranker-base vs MiniLM-L6 vs jina-tiny, 10 vs 20 candidates, quality (Hit@1/MRR) and latency. Likely as extra eval configs (e.g. `hybrid_rerank` params from settings/CLI) with `reranker_model` + `rerank_candidates` params logged. Tests first for any new code.
+2. BGE query prefix with vs without (`FastEmbedEmbedder(query_prefix=...)`); the dense index needn't be rebuilt (prefix is query-side only).
+3. 22 oversized chunks (scanned-manual OCR HTML tables): HTML→Markdown tables or smaller chunks, measured.
+4. Pick the default `/search` mode from the numbers (currently `bm25`); hybrid_rerank costs ~10 s/query on CPU.
+5. Optional: failure analysis of q021 (CDS table) and q037 (Marine floating objects), missed by most configs.
+6. End of phase: `make lint` + `make test`, PR `phase-3-eval` → `main`, stop for the user's review (never merge).
+Teaching mode continues: after each task, explanation + Obsidian notes (`Tasks/P3 - ...`), then wait for "continue". Last notes written: `Tasks/P3 - Parser comparison.md`.
 
 Open items to measure in Phase 3 (from Phase 2):
 - Reranker model and candidate count by quality **and** latency: bge-reranker-base ~10.7 s/query vs MiniLM-L6 2.4 s vs jina-tiny 2.0 s (CPU, 20 candidates); also 10 vs 20 candidates. Pick the served one from the numbers.
@@ -187,6 +198,7 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 ## Deferred / known gaps
 
 - **Phase 3:** 22 chunks (1.7%) still exceed bge-small's 512 tokens, all OCR HTML tables in the scanned manual: candidate fix = HTML→Markdown tables or smaller chunks, measured on the eval set.
+- 2026-10-24: The OCR API key (`OCR_API_KEY` in `.env`) was printed into a Claude session transcript by mistake (not in any file or commit). User advised to rotate it if the RunPod pod/key is still live.
 - **Phase 3:** reranker model choice (bge-base 10.7 s/query vs MiniLM-L6 2.4 s vs jina-tiny 2.0 s) and candidate count, by quality and latency.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
