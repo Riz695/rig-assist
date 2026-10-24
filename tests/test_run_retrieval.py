@@ -8,8 +8,11 @@ from typing import Any
 
 import pytest
 
+from rig_assist.config import Settings
 from rig_assist.evaluation.eval_set import EvalQuestion
 from rig_assist.evaluation.run_retrieval import (
+    ALL_CONFIGS,
+    RERANK_VARIANTS,
     V1_THRESHOLD,
     ConfigResult,
     EvalConfig,
@@ -173,3 +176,69 @@ def test_report_compares_parsers_mode_by_mode() -> None:
 
 def test_no_parser_comparison_without_both_parsers() -> None:
     assert "## Parser comparison" not in render_report(run(), title="Retrieval eval")
+
+
+def rerank_params(model: str, candidates: int, parser: str = "pdfplumber") -> dict[str, str]:
+    return {
+        "mode": "hybrid_rerank",
+        "parser": parser,
+        "reranker_model": model,
+        "rerank_candidates": str(candidates),
+    }
+
+
+def test_report_compares_rerankers_against_plain_hybrid() -> None:
+    configs = [
+        EvalConfig(
+            "hybrid", ScriptedRetriever(BM25.results), {"mode": "hybrid", "parser": "pdfplumber"}
+        ),
+        EvalConfig(
+            "hybrid_rerank", ScriptedRetriever(DENSE.results), rerank_params("big/model", 20)
+        ),
+        EvalConfig(
+            "hybrid_rerank_small_c10",
+            ScriptedRetriever(BM25.results),
+            rerank_params("small/model", 10),
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    section = report.split("## Reranker comparison")[1].split("## Refusal")[0]
+    rows = [line for line in section.splitlines() if line.startswith("| ") and "---" not in line]
+    assert [row.split(" | ")[:2] for row in rows[1:]] == [
+        ["| none (hybrid)", "–"],
+        ["| big/model", "20"],
+        ["| small/model", "10"],
+    ]
+    assert "| big/model | 20 | 1/2 (0.50) | 2/2 (1.00) | 0.750 | 0.000 s | 0.000 s |" in section
+
+
+def test_reranker_comparison_leaves_out_other_parsers() -> None:
+    configs = [
+        EvalConfig("a", ScriptedRetriever(DENSE.results), rerank_params("big/model", 20)),
+        EvalConfig("b", ScriptedRetriever(DENSE.results), rerank_params("small/model", 10)),
+        EvalConfig(
+            "olmocr_all_hybrid_rerank",
+            ScriptedRetriever(DENSE.results),
+            rerank_params("other/model", 20, parser="olmocr"),
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    section = report.split("## Reranker comparison")[1].split("## Refusal")[0]
+    assert "big/model" in section and "other/model" not in section
+
+
+def test_no_reranker_comparison_with_a_single_reranker() -> None:
+    configs = [EvalConfig("a", ScriptedRetriever(DENSE.results), rerank_params("big/model", 20))]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    assert "## Reranker comparison" not in report
+
+
+def test_reranker_variants_are_distinct_runnable_configs() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    default = (settings.reranker_model, 20)  # what the plain hybrid_rerank config runs
+    variants = list(RERANK_VARIANTS.values())
+    assert len(set(variants)) == len(variants)
+    assert default not in variants
+    assert {candidates for _, candidates in variants} == {10, 20}
+    for name in RERANK_VARIANTS:
+        assert name.startswith("hybrid_rerank_") and name in ALL_CONFIGS
