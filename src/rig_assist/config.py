@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     qdrant_api_key: SecretStr | None = None
     qdrant_collection: str = "rig_assist_chunks"
 
+    # --- Experiment tracking (eval runs only; MLflow is in the `eval` dependency group) ---
+    mlflow_tracking_uri: str = "sqlite:///data/mlflow/mlflow.db"
+    mlflow_artifact_dir: Path = Path("data/mlflow/artifacts")
+
     # --- LLM ---
     # "fake" is the default so the app and tests run offline and free.
     llm_provider: Literal["fake", "openai", "azure"] = "fake"

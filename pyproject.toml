@@ -63,6 +63,8 @@ markers = [
 filterwarnings = [
     # Tests run Qdrant in-memory, where payload indexes are a no-op; the server uses them.
     "ignore:Payload indexes have no effect in the local Qdrant:UserWarning",
+    # Raised inside MLflow 3.17's SQLAlchemy store, not by our code (tests/test_tracking.py).
+    "ignore:The ``noload`` loader strategy is deprecated:DeprecationWarning",
 ]
 
 [tool.mypy]
