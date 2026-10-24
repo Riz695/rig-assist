@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). No Phase 3 task started yet: begin with "Phase 3: start here" below.
+- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). In progress: see "Phase 3: start here" and the task table below.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
@@ -100,6 +100,7 @@ Open items to measure in Phase 3 (from Phase 2):
 
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
+| Metrics: `first_relevant_rank`, `hit_at_k`, `reciprocal_rank_at_k` on (doc_id, page); `refusal_metrics` (refused = positive class, score == threshold answered, nothing retrieved = refused, undefined precision/recall = None) | `f97d11e` test → FEAT feat | `Tasks/P3 - Retrieval and refusal metrics.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
