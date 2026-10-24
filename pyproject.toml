@@ -28,6 +28,11 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.1",
 ]
+# Eval runs only (`make eval`): experiment tracking. Not in the API image or CI.
+# Exact pin: 3.17.1/3.17.2 were under two weeks old when chosen (2026-10-24).
+eval = [
+    "mlflow==3.17.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.3,<0.14.0"]
