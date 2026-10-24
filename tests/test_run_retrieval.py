@@ -131,6 +131,34 @@ def test_a_warm_up_query_runs_first_and_is_not_scored() -> None:
     assert retriever.queries[0] not in {q.question for q in QUESTIONS}
 
 
+def test_each_config_is_unloaded_after_its_run_before_the_next_starts() -> None:
+    events: list[str] = []
+
+    class RecordingRetriever(ScriptedRetriever):
+        def __init__(self, name: str) -> None:
+            super().__init__(DENSE.results)
+            self.name = name
+
+        def search(self, query: str, k: int) -> list[ScoredChunk]:
+            events.append(f"search {self.name}")
+            return super().search(query, k)
+
+    configs = [
+        EvalConfig("a", RecordingRetriever("a"), {}, unload=lambda: events.append("unload a")),
+        EvalConfig("b", RecordingRetriever("b"), {}),  # nothing to unload
+        EvalConfig("c", RecordingRetriever("c"), {}, unload=lambda: events.append("unload c")),
+    ]
+    run_configs(configs, QUESTIONS, FakeTracker())
+    searches = len(QUESTIONS) + 1  # warm-up + one per question
+    assert events == (
+        ["search a"] * searches
+        + ["unload a"]
+        + ["search b"] * searches
+        + ["search c"] * searches
+        + ["unload c"]
+    )
+
+
 def test_refusal_at_v1_threshold_and_at_the_tuned_threshold() -> None:
     [dense, _] = run()
     assert dense.refusal_v1 is not None and dense.refusal_tuned is not None
