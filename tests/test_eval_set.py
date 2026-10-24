@@ -43,6 +43,7 @@ def answerable(**overrides: Any) -> dict[str, Any]:
         "evidence_quote": "Close the annular preventer before opening the choke line.",
         "type": "procedure",
         "difficulty": "easy",
+        "wording": "manual",
     }
     entry.update(overrides)
     return entry
@@ -58,6 +59,7 @@ def unanswerable(**overrides: Any) -> dict[str, Any]:
         "evidence_quote": None,
         "type": "unanswerable",
         "difficulty": "medium",
+        "wording": "paraphrased",
     }
     entry.update(overrides)
     return entry
@@ -95,7 +97,8 @@ def test_blank_lines_are_ignored() -> None:
 
 
 @pytest.mark.parametrize(
-    "field", ["id", "question", "expected_pages", "reference_answer", "type", "difficulty"]
+    "field",
+    ["id", "question", "expected_pages", "reference_answer", "type", "difficulty", "wording"],
 )
 def test_missing_field_is_reported(field: str) -> None:
     entry = answerable()
@@ -109,6 +112,13 @@ def test_unknown_type_and_difficulty_are_reported() -> None:
     errors = errors_for(answerable(type="trivia", difficulty="extreme"))
     assert any("type" in e for e in errors)
     assert any("difficulty" in e for e in errors)
+
+
+def test_unknown_wording_is_reported() -> None:
+    # "paraphrased" = worded differently from the manual (synonyms, technician language),
+    # so BM25 can't match on the manual's own words. Reported as its own subset.
+    errors = errors_for(answerable(wording="copied"))
+    assert any("wording" in e for e in errors)
 
 
 def test_unknown_extra_field_is_reported() -> None:
