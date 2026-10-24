@@ -152,3 +152,24 @@ def test_report_shows_refusal_only_where_it_applies() -> None:
     refusal_section = report.split("## Refusal")[1]
     assert "| dense |" in refusal_section
     assert "| bm25 |" not in refusal_section
+
+
+def test_report_compares_parsers_mode_by_mode() -> None:
+    configs = [
+        EvalConfig(
+            "dense", ScriptedRetriever(DENSE.results), {"mode": "dense", "parser": "pdfplumber"}
+        ),
+        EvalConfig(
+            "olmocr_all_dense",
+            ScriptedRetriever(BM25.results),
+            {"mode": "dense", "parser": "olmocr"},
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    section = report.split("## Parser comparison")[1].split("## Refusal")[0]
+    assert "| dense | pdfplumber | 2/2 (1.00) | 0.750 | n/a | n/a | n/a | n/a |" in section
+    assert "| dense | olmocr | 2/2 (1.00) | 0.500 | n/a | n/a | n/a | n/a |" in section
+
+
+def test_no_parser_comparison_without_both_parsers() -> None:
+    assert "## Parser comparison" not in render_report(run(), title="Retrieval eval")
