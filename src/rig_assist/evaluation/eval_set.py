@@ -23,6 +23,9 @@ from rig_assist.ingestion.pipeline import make_doc_id
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 QuestionType = Literal["factual", "troubleshooting", "procedure", "table", "unanswerable"]
 Difficulty = Literal["easy", "medium", "hard"]
+# "paraphrased": worded differently from the manual (synonyms, a technician's words), so
+# keyword search can't simply match the manual's phrasing. Reported as its own subset.
+Wording = Literal["manual", "paraphrased"]
 
 # doc_id -> page texts; index 0 is page 1.
 ReferencePages = Mapping[str, Sequence[str]]
@@ -41,6 +44,7 @@ class EvalQuestion(BaseModel):
     evidence_quote: str | None
     type: QuestionType
     difficulty: Difficulty
+    wording: Wording
 
     @property
     def answerable(self) -> bool:
