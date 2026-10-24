@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). In progress: see "Phase 3: start here" and the task table below.
+- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). In progress: see "Phase 3: start here" and the task table below. **Waiting for the user's spot-check of 10 random eval questions (seed 20261024) before freezing the set.**
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
@@ -102,6 +102,7 @@ Open items to measure in Phase 3 (from Phase 2):
 |---|---|---|
 | Metrics: `first_relevant_rank`, `hit_at_k`, `reciprocal_rank_at_k` on (doc_id, page); `refusal_metrics` (refused = positive class, score == threshold answered, nothing retrieved = refused, undefined precision/recall = None) | `f97d11e` test → `ce7d392` feat | `Tasks/P3 - Retrieval and refusal metrics.md` |
 | Eval-set validator: `EvalQuestion` (Pydantic, extra fields forbidden, answerable/unanswerable consistency), `validate_eval_set` (every error with line + id; duplicate ids; unknown doc_id; page out of range; quote on a stated page, ignoring case/spacing), `load_eval_set`, `load_reference_pages` (text layer, OCR cache for scans) | `ded28c7` test → `b8c7b25` feat | `Tasks/P3 - Eval-set validator.md` |
+| Eval set: `eval/questions.jsonl` (47 q: 42 answerable over all 6 manuals incl. 7 scanned-manual, 5 table, 5 unanswerable; 18/42 paraphrased), `eval/README.md`, `eval/CHANGELOG.md`; `wording` field added to the schema | `37bfac0` test → `26dcd72` feat; `dcdc6b8` feat | `Tasks/P3 - Building the eval set.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -150,6 +151,7 @@ Open items to measure in Phase 3 (from Phase 2):
 - 2026-10-24: `OCR_MODE=missing make ingest-v1` (OCR from cache, no GPU): 9 min 50 s for both. `v1_baseline` 1,142 chunks (Marine scanned manual: 0 chunks, as v1); `v1_retrieval_on_v2_pages` 1,296; v2 main 1,316. Store counts = Qdrant counts. pypdf warns about missing fontTools (CFF fonts in one manual); v1 had the same, kept.
 - 2026-10-24: **The user's `.env` has `OCR_MODE=off`**, but the v2 main index was built with `missing`. A plain `make ingest` now would drop the scanned manual. Phase 3: pin the OCR mode used for each index (e.g. record it in `DocumentInfo` or the eval run params) so results are reproducible.
 - 2026-10-24: Eval-set reference text = raw text layer (pdfplumber, incl. tables as Markdown, before header/footer stripping and dot-leader collapsing), or the cached olmOCR output for pages without a text layer. Real corpus: 6 docs, 982 pages, 5 empty (the known blank pages); loading takes 56 s (pdfplumber), fine for validation, cache it if the eval runner needs it every run.
+- 2026-10-24: Eval set: one `expected_doc_id` per question, so questions whose key fact appears in two manuals were dropped (checked by regex over all 982 pages); same fact on two pages of one manual → both pages listed. Added a required `wording: manual|paraphrased` field (beyond PLAN's schema) so BM25 vs dense can be compared on paraphrased questions. Paraphrased share is 43%, above PLAN's "roughly 30%".
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
