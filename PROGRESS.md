@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). In progress: see "Phase 3: start here" and the task table below. Eval set **frozen 2026-10-24** after the user's spot-check; next: retrieval eval runner + MLflow.
+- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). In progress: see "Phase 3: start here" and the task table below. Eval set **frozen 2026-10-24** after the user's spot-check. Runner core done; next: CLI + MLflow 3.17.0 (`eval` dependency group, SQLite backend) + `make eval` + real run.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
@@ -103,6 +103,7 @@ Open items to measure in Phase 3 (from Phase 2):
 | Metrics: `first_relevant_rank`, `hit_at_k`, `reciprocal_rank_at_k` on (doc_id, page); `refusal_metrics` (refused = positive class, score == threshold answered, nothing retrieved = refused, undefined precision/recall = None) | `f97d11e` test → `ce7d392` feat | `Tasks/P3 - Retrieval and refusal metrics.md` |
 | Eval-set validator: `EvalQuestion` (Pydantic, extra fields forbidden, answerable/unanswerable consistency), `validate_eval_set` (every error with line + id; duplicate ids; unknown doc_id; page out of range; quote on a stated page, ignoring case/spacing), `load_eval_set`, `load_reference_pages` (text layer, OCR cache for scans) | `ded28c7` test → `b8c7b25` feat | `Tasks/P3 - Eval-set validator.md` |
 | Eval set: `eval/questions.jsonl` (47 q: 42 answerable over all 6 manuals incl. 7 scanned-manual, 5 table, 5 unanswerable; 18/42 paraphrased), `eval/README.md`, `eval/CHANGELOG.md`; `wording` field added to the schema | `37bfac0` test → `26dcd72` feat; `dcdc6b8` feat | `Tasks/P3 - Building the eval set.md` |
+| Eval runner core: `evaluate` (rank of first relevant page in top 10, latency, best dense score in top 5), `summarize` (Hit@1/5, MRR@10, p50/p95 latency; subsets all/table/scanned/paraphrased/manual_wording), `refusal_cases`, `choose_threshold` (max refusal F1, lowest on ties) | `bb5c8b6` test → `d2a035b` feat | `Tasks/P3 - Retrieval eval runner.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -152,6 +153,8 @@ Open items to measure in Phase 3 (from Phase 2):
 - 2026-10-24: **The user's `.env` has `OCR_MODE=off`**, but the v2 main index was built with `missing`. A plain `make ingest` now would drop the scanned manual. Phase 3: pin the OCR mode used for each index (e.g. record it in `DocumentInfo` or the eval run params) so results are reproducible.
 - 2026-10-24: Eval-set reference text = raw text layer (pdfplumber, incl. tables as Markdown, before header/footer stripping and dot-leader collapsing), or the cached olmOCR output for pages without a text layer. Real corpus: 6 docs, 982 pages, 5 empty (the known blank pages); loading takes 56 s (pdfplumber), fine for validation, cache it if the eval runner needs it every run.
 - 2026-10-24: Eval set: one `expected_doc_id` per question, so questions whose key fact appears in two manuals were dropped (checked by regex over all 982 pages); same fact on two pages of one manual → both pages listed. Added a required `wording: manual|paraphrased` field (beyond PLAN's schema) so BM25 vs dense can be compared on paraphrased questions. Paraphrased share is 43%, above PLAN's "roughly 30%".
+- 2026-10-24: MLflow: pin **3.17.0** (2026-10-07; 3.17.1/3.17.2 under two weeks old), in a separate `eval` dependency group (not in the API image). Backend **SQLite** (`sqlite:///…mlflow.db`, MLflow's default since 3.7); not the legacy file store, which is in maintenance mode and has a path-traversal CVE (CVE-2026-53995, ≤ 3.17.1, FileStore only).
+- 2026-10-24: "Not found" rule for the eval: refuse when no top-5 result has a dense (cosine) score ≥ threshold (v1: 0.6). Undefined for pure BM25 (no cosine). Tuned threshold = best refusal F1 on the eval set, lowest on ties; reported next to 0.6 and labelled as tuned on the test set.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
