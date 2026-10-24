@@ -6,8 +6,9 @@ import pytest
 from conftest import KeywordEmbedder
 from qdrant_client import QdrantClient
 
+from rig_assist.config import Settings
 from rig_assist.ingestion.models import Chunk
-from rig_assist.retrieval.dense import DenseIndex, point_id
+from rig_assist.retrieval.dense import DenseIndex, make_dense_index, point_id
 from rig_assist.retrieval.embedder import FastEmbedEmbedder
 
 
@@ -102,6 +103,13 @@ def test_query_prefix_is_applied_to_queries_only() -> None:
     dense.upsert_document("drilling-manual", DRILLING)
     dense.search("pump", k=1)
     assert embedder.queries == ["pump"]  # the embedder adds the prefix itself
+
+
+def test_make_dense_index_passes_the_query_prefix_setting() -> None:
+    settings = Settings(_env_file=None, embedding_query_prefix="Represent this: ")  # type: ignore[call-arg]
+    embedder = make_dense_index(settings).embedder  # no model or server is touched yet
+    assert isinstance(embedder, FastEmbedEmbedder)
+    assert embedder.query_prefix == "Represent this: "
 
 
 def test_collection_is_created_with_the_embedder_dimension() -> None:

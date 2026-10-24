@@ -26,6 +26,7 @@ def test_defaults_run_offline() -> None:
     assert settings.embedding_model == "BAAI/bge-small-en-v1.5"
     assert settings.data_raw_dir == Path("data/raw")
     assert settings.langfuse_enabled is False
+    assert settings.embedding_query_prefix == ""  # v1 and fastembed use none
 
 
 def test_environment_variables_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

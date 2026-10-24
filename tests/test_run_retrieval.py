@@ -12,6 +12,7 @@ from rig_assist.config import Settings
 from rig_assist.evaluation.eval_set import EvalQuestion
 from rig_assist.evaluation.run_retrieval import (
     ALL_CONFIGS,
+    PREFIX_CONFIGS,
     RERANK_VARIANTS,
     V1_THRESHOLD,
     ConfigResult,
@@ -20,7 +21,9 @@ from rig_assist.evaluation.run_retrieval import (
     run_configs,
 )
 from rig_assist.ingestion.models import Chunk
+from rig_assist.retrieval.embedder import BGE_QUERY_PREFIX
 from rig_assist.retrieval.models import ScoredChunk
+from rig_assist.retrieval.service import SEARCH_MODES
 
 
 def question(qid: str, page: int = 1, answerable: bool = True) -> EvalQuestion:
@@ -242,3 +245,57 @@ def test_reranker_variants_are_distinct_runnable_configs() -> None:
     assert {candidates for _, candidates in variants} == {10, 20}
     for name in RERANK_VARIANTS:
         assert name.startswith("hybrid_rerank_") and name in ALL_CONFIGS
+
+
+def prefixed(params: dict[str, str]) -> dict[str, str]:
+    return {**params, "query_prefix": BGE_QUERY_PREFIX}
+
+
+def test_bge_query_prefix_is_baais_retrieval_instruction() -> None:
+    assert BGE_QUERY_PREFIX == "Represent this sentence for searching relevant passages: "
+
+
+def test_prefix_configs_are_named_after_a_runnable_base_config() -> None:
+    assert PREFIX_CONFIGS
+    for name in PREFIX_CONFIGS:
+        base = name.removesuffix("_qprefix")
+        assert name != base and name in ALL_CONFIGS
+        assert base in SEARCH_MODES or base in RERANK_VARIANTS
+
+
+def test_report_compares_query_prefix_mode_by_mode() -> None:
+    plain = {"mode": "dense", "parser": "pdfplumber", "query_prefix": ""}
+    configs = [
+        EvalConfig("dense", ScriptedRetriever(DENSE.results), plain),
+        EvalConfig("dense_qprefix", ScriptedRetriever(BM25.results), prefixed(plain)),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    section = report.split("## Query prefix comparison")[1].split("## Refusal")[0]
+    assert "| mode | query prefix | Hit@5 | MRR@10 |" in section
+    assert "| dense | none | 2/2 (1.00) | 0.750 |" in section
+    assert "| dense | bge | 2/2 (1.00) | 0.500 |" in section
+
+
+def test_prefix_rows_stay_out_of_the_parser_and_reranker_comparisons() -> None:
+    dense = {"mode": "dense", "parser": "pdfplumber", "query_prefix": ""}
+    configs = [
+        EvalConfig("dense", ScriptedRetriever(DENSE.results), dense),
+        EvalConfig("dense_qprefix", ScriptedRetriever(DENSE.results), prefixed(dense)),
+        EvalConfig(
+            "olmocr_all_dense",
+            ScriptedRetriever(DENSE.results),
+            {**dense, "parser": "olmocr"},
+        ),
+        EvalConfig("r1", ScriptedRetriever(DENSE.results), rerank_params("big/model", 20)),
+        EvalConfig("r2", ScriptedRetriever(DENSE.results), rerank_params("small/model", 20)),
+        EvalConfig(
+            "r2_qprefix",
+            ScriptedRetriever(DENSE.results),
+            prefixed(rerank_params("small/model", 20)),
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    parser_section = report.split("## Parser comparison")[1].split("## ")[0]
+    assert parser_section.count("| dense | pdfplumber |") == 1
+    rerank_section = report.split("## Reranker comparison")[1].split("## ")[0]
+    assert rerank_section.count("| small/model |") == 1
