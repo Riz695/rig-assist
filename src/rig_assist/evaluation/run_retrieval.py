@@ -1,6 +1,7 @@
 """Run the frozen eval set through every retrieval config, track each run, write the report.
 
-`make eval` runs `main()`. Configs: v2's four search modes on the main index, the same
+`make eval` runs `main()`. Configs: v2's four search modes on the main index, other
+rerankers and candidate counts on the main index (`RERANK_VARIANTS`), the same
 modes on each index variant (`olmocr_all_<mode>`, for the parser comparison; see
 `rig_assist.ingestion.variants`), and the two v1 baselines on their own indexes (see
 `rig_assist.v1_baseline`). Every number in the report has a tracked run with the same
@@ -43,7 +44,7 @@ from rig_assist.ingestion.variants import (
 )
 from rig_assist.retrieval.dense import make_dense_index
 from rig_assist.retrieval.models import Retriever
-from rig_assist.retrieval.rerank import FastEmbedCrossEncoder
+from rig_assist.retrieval.rerank import FastEmbedCrossEncoder, RerankRetriever
 from rig_assist.retrieval.service import SEARCH_MODES, SearchIndex
 from rig_assist.v1_baseline.pipeline import (
     V1_CONFIGS,
@@ -60,7 +61,16 @@ WARM_UP_QUERY = "warm-up query: load the models before timing"
 SCANNED_DOCS = frozenset({"marine-offshore-log-ops-manual"})
 SUBSETS = ("table", "scanned", "paraphrased", "manual_wording")
 VARIANT_CONFIGS = tuple(f"{variant}_{mode}" for variant in INDEX_VARIANTS for mode in SEARCH_MODES)
-ALL_CONFIGS = (*SEARCH_MODES, *VARIANT_CONFIGS, *V1_CONFIGS)
+# Reranker choice: other cross-encoders and candidate counts on the main index, next to
+# `hybrid_rerank` (settings.reranker_model, 20 candidates). Name → (model, candidates).
+RERANK_VARIANTS: dict[str, tuple[str, int]] = {
+    "hybrid_rerank_bge_base_c10": ("BAAI/bge-reranker-base", 10),
+    "hybrid_rerank_minilm_c10": ("Xenova/ms-marco-MiniLM-L-6-v2", 10),
+    "hybrid_rerank_minilm_c20": ("Xenova/ms-marco-MiniLM-L-6-v2", 20),
+    "hybrid_rerank_jina_tiny_c10": ("jinaai/jina-reranker-v1-tiny-en", 10),
+    "hybrid_rerank_jina_tiny_c20": ("jinaai/jina-reranker-v1-tiny-en", 20),
+}
+ALL_CONFIGS = (*SEARCH_MODES, *RERANK_VARIANTS, *VARIANT_CONFIGS, *V1_CONFIGS)
 # The `parser` param: the main index uses pdfplumber wherever there is a text layer
 # (olmOCR only for pages without one); a variant's parser is in its name.
 MAIN_PARSER = "pdfplumber"
@@ -187,6 +197,7 @@ def render_report(results: Sequence[ConfigResult], title: str, notes: Sequence[s
                 f"{s.mrr_at_10:.3f} |"
             )
     lines += _parser_comparison(results)
+    lines += _reranker_comparison(results)
     lines += [
         "",
         '## Refusal ("not found")',
@@ -246,6 +257,34 @@ def _parser_comparison(results: Sequence[ConfigResult]) -> list[str]:
     return lines
 
 
+def _reranker_comparison(results: Sequence[ConfigResult]) -> list[str]:
+    """Quality and latency per (reranker, candidates) on the main index, vs plain hybrid."""
+    main = [r for r in results if r.params.get("parser", MAIN_PARSER) == MAIN_PARSER]
+    reranked = [r for r in main if "reranker_model" in r.params]
+    if len(reranked) < 2:
+        return []
+    lines = [
+        "",
+        "## Reranker comparison",
+        "",
+        "Main index. Each cross-encoder rescores the hybrid retriever's top `candidates` "
+        "chunks. `none (hybrid)` is the same first stage without reranking. Latency is the "
+        "whole query (first stage + reranking), on this machine's CPU.",
+        "",
+        "| reranker | candidates | Hit@1 | Hit@5 | MRR@10 | p50 latency | p95 latency |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    rows = [("none (hybrid)", "–", r) for r in main if r.params.get("mode") == "hybrid"]
+    rows += [(r.params["reranker_model"], r.params["rerank_candidates"], r) for r in reranked]
+    for model, candidates, r in rows:
+        s = r.summaries["all"]
+        lines.append(
+            f"| {model} | {candidates} | {_count(s.hit_at_1, s.n)} | {_count(s.hit_at_5, s.n)} "
+            f"| {s.mrr_at_10:.3f} | {s.p50_latency_s:.3f} s | {s.p95_latency_s:.3f} s |"
+        )
+    return lines
+
+
 # --- Real configs (CLI) ----------------------------------------------------
 
 
@@ -264,9 +303,15 @@ def _index_params(store: IndexStore) -> dict[str, str]:
 def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
     configs = []
     common = {"embedding_model": settings.embedding_model, "rrf_k": "60", "k_each": "20"}
-    cross_encoder = FastEmbedCrossEncoder(
-        settings.reranker_model, cache_dir=str(settings.models_dir)
-    )
+    # One cross-encoder per model (loaded on first use), shared by its candidate counts.
+    cross_encoders: dict[str, FastEmbedCrossEncoder] = {}
+
+    def cross_encoder_for(model: str) -> FastEmbedCrossEncoder:
+        if model not in cross_encoders:
+            cross_encoders[model] = FastEmbedCrossEncoder(model, cache_dir=str(settings.models_dir))
+        return cross_encoders[model]
+
+    cross_encoder = cross_encoder_for(settings.reranker_model)
     # (config name prefix, chunk store, Qdrant collection, parser) for each v2 index
     v2_indexes = [("", settings.data_index_dir, settings.qdrant_collection, MAIN_PARSER)]
     for variant in INDEX_VARIANTS:
@@ -280,17 +325,28 @@ def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
         )
     for prefix, store_dir, collection, parser in v2_indexes:
         modes = [mode for mode in SEARCH_MODES if prefix + mode in names]
-        if not modes:
+        # Reranker variants run on the main index only.
+        rerank_variants = [name for name in RERANK_VARIANTS if not prefix and name in names]
+        if not modes and not rerank_variants:
             continue
         store = IndexStore(store_dir)
         dense = make_dense_index(settings.model_copy(update={"qdrant_collection": collection}))
         index = SearchIndex(store, dense, cross_encoder)
+        index_params = {**common, **_index_params(store), "bm25_idf": "lucene"}
+        index_params |= {"qdrant_collection": collection, "parser": parser}
         for mode in modes:
-            params = {**common, **_index_params(store), "mode": mode, "bm25_idf": "lucene"}
-            params |= {"qdrant_collection": collection, "parser": parser}
+            params = {**index_params, "mode": mode}
             if mode == "hybrid_rerank":
                 params |= {"reranker_model": settings.reranker_model, "rerank_candidates": "20"}
             configs.append(EvalConfig(prefix + mode, index.retriever(mode), params))
+        for name in rerank_variants:
+            model, candidates = RERANK_VARIANTS[name]
+            params = {**index_params, "mode": "hybrid_rerank", "reranker_model": model}
+            params["rerank_candidates"] = str(candidates)
+            retriever = RerankRetriever(
+                index.retriever("hybrid"), cross_encoder_for(model), candidates=candidates
+            )
+            configs.append(EvalConfig(name, retriever, params))
     for config in V1_CONFIGS:
         if config not in names:
             continue
