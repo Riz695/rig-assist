@@ -8,6 +8,9 @@ from typing import Protocol
 
 from fastembed import TextEmbedding
 
+# BAAI's suggested instruction for short queries that search longer passages (bge v1.5).
+BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
 
 class Embedder(Protocol):
     @property

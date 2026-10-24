@@ -38,6 +38,8 @@ class Settings(BaseSettings):
 
     # --- Retrieval ---
     embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # Prepended to search queries only (not chunks). "" = none, as v1 and fastembed.
+    embedding_query_prefix: str = ""
     reranker_model: str = "BAAI/bge-reranker-base"
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: SecretStr | None = None

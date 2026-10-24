@@ -101,11 +101,16 @@ class DenseIndex:
 
 
 def make_dense_index(settings: Settings) -> DenseIndex:
-    """The real dense index: Qdrant at QDRANT_URL + the EMBEDDING_MODEL from MODELS_DIR."""
+    """The real dense index: Qdrant at QDRANT_URL + the EMBEDDING_MODEL from MODELS_DIR,
+    with EMBEDDING_QUERY_PREFIX on queries."""
     api_key = settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
     # check_compatibility=False: otherwise the client calls the server when it's *created*
     # (and warns if it's down), so building the app would depend on Qdrant being up.
     # Versions are pinned instead: qdrant-client 1.19.x (pyproject) and server 1.19.2 (compose).
     client = QdrantClient(url=settings.qdrant_url, api_key=api_key, check_compatibility=False)
-    embedder = FastEmbedEmbedder(settings.embedding_model, cache_dir=str(settings.models_dir))
+    embedder = FastEmbedEmbedder(
+        settings.embedding_model,
+        query_prefix=settings.embedding_query_prefix,
+        cache_dir=str(settings.models_dir),
+    )
     return DenseIndex(client, settings.qdrant_collection, embedder)

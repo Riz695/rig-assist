@@ -1,7 +1,8 @@
 """Run the frozen eval set through every retrieval config, track each run, write the report.
 
 `make eval` runs `main()`. Configs: v2's four search modes on the main index, other
-rerankers and candidate counts on the main index (`RERANK_VARIANTS`), the same
+rerankers and candidate counts on the main index (`RERANK_VARIANTS`), main-index configs
+with BGE's query prefix (`PREFIX_CONFIGS`), the same
 modes on each index variant (`olmocr_all_<mode>`, for the parser comparison; see
 `rig_assist.ingestion.variants`), and the two v1 baselines on their own indexes (see
 `rig_assist.v1_baseline`). Every number in the report has a tracked run with the same
@@ -15,10 +16,11 @@ import logging
 import subprocess
 import sys
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import cast
 
 from rig_assist.config import Settings, get_settings
 from rig_assist.evaluation.eval_set import EvalQuestion, load_eval_set, load_reference_pages
@@ -43,9 +45,10 @@ from rig_assist.ingestion.variants import (
     variant_store_dir,
 )
 from rig_assist.retrieval.dense import make_dense_index
+from rig_assist.retrieval.embedder import BGE_QUERY_PREFIX
 from rig_assist.retrieval.models import Retriever
-from rig_assist.retrieval.rerank import FastEmbedCrossEncoder, RerankRetriever
-from rig_assist.retrieval.service import SEARCH_MODES, SearchIndex
+from rig_assist.retrieval.rerank import CrossEncoder, FastEmbedCrossEncoder, RerankRetriever
+from rig_assist.retrieval.service import SEARCH_MODES, SearchIndex, SearchMode
 from rig_assist.v1_baseline.pipeline import (
     V1_CONFIGS,
     make_v1_retriever,
@@ -70,7 +73,18 @@ RERANK_VARIANTS: dict[str, tuple[str, int]] = {
     "hybrid_rerank_jina_tiny_c10": ("jinaai/jina-reranker-v1-tiny-en", 10),
     "hybrid_rerank_jina_tiny_c20": ("jinaai/jina-reranker-v1-tiny-en", 20),
 }
-ALL_CONFIGS = (*SEARCH_MODES, *RERANK_VARIANTS, *VARIANT_CONFIGS, *V1_CONFIGS)
+# Query prefix: the same main-index configs with BGE's instruction before each query.
+PREFIX_SUFFIX = "_qprefix"
+PREFIX_CONFIGS = tuple(
+    f"{base}{PREFIX_SUFFIX}" for base in ("dense", "hybrid", "hybrid_rerank_minilm_c20")
+)
+ALL_CONFIGS = (
+    *SEARCH_MODES,
+    *RERANK_VARIANTS,
+    *PREFIX_CONFIGS,
+    *VARIANT_CONFIGS,
+    *V1_CONFIGS,
+)
 # The `parser` param: the main index uses pdfplumber wherever there is a text layer
 # (olmOCR only for pages without one); a variant's parser is in its name.
 MAIN_PARSER = "pdfplumber"
@@ -198,6 +212,7 @@ def render_report(results: Sequence[ConfigResult], title: str, notes: Sequence[s
             )
     lines += _parser_comparison(results)
     lines += _reranker_comparison(results)
+    lines += _prefix_comparison(results)
     lines += [
         "",
         '## Refusal ("not found")',
@@ -224,11 +239,24 @@ def render_report(results: Sequence[ConfigResult], title: str, notes: Sequence[s
     return "\n".join(lines) + "\n"
 
 
+def _subset_cells(r: ConfigResult, subsets: Sequence[str]) -> str:
+    cells = []
+    for subset in subsets:
+        s = r.summaries.get(subset)
+        cells += ["n/a", "n/a"] if s is None else [_count(s.hit_at_5, s.n), f"{s.mrr_at_10:.3f}"]
+    return " | ".join(cells)
+
+
 def _parser_comparison(results: Sequence[ConfigResult]) -> list[str]:
-    """Rows per (mode, parser) for the modes that were run with more than one parser."""
+    """Rows per (mode, parser) for the modes that were run with more than one parser.
+
+    Only the plain mode configs (`dense`, `olmocr_all_dense`...), so reranker and query
+    prefix variants of the main index don't show up as extra `pdfplumber` rows.
+    """
     by_mode: dict[str, list[ConfigResult]] = {}
     for r in results:
-        if "parser" in r.params:
+        plain = r.name == r.params.get("mode") or r.name in VARIANT_CONFIGS
+        if plain and "parser" in r.params:
             by_mode.setdefault(r.params["mode"], []).append(r)
     compared = {mode: rows for mode, rows in by_mode.items() if len(rows) > 1}
     if not compared:
@@ -247,19 +275,18 @@ def _parser_comparison(results: Sequence[ConfigResult]) -> list[str]:
     ]
     for mode, rows in compared.items():
         for r in rows:
-            cells = []
-            for subset in ("all", "table", "scanned"):
-                s = r.summaries.get(subset)
-                cells += (
-                    ["n/a", "n/a"] if s is None else [_count(s.hit_at_5, s.n), f"{s.mrr_at_10:.3f}"]
-                )
-            lines.append(f"| {mode} | {r.params['parser']} | {' | '.join(cells)} |")
+            cells = _subset_cells(r, ("all", "table", "scanned"))
+            lines.append(f"| {mode} | {r.params['parser']} | {cells} |")
     return lines
 
 
 def _reranker_comparison(results: Sequence[ConfigResult]) -> list[str]:
     """Quality and latency per (reranker, candidates) on the main index, vs plain hybrid."""
-    main = [r for r in results if r.params.get("parser", MAIN_PARSER) == MAIN_PARSER]
+    main = [
+        r
+        for r in results
+        if r.params.get("parser", MAIN_PARSER) == MAIN_PARSER and not r.params.get("query_prefix")
+    ]
     reranked = [r for r in main if "reranker_model" in r.params]
     if len(reranked) < 2:
         return []
@@ -285,6 +312,37 @@ def _reranker_comparison(results: Sequence[ConfigResult]) -> list[str]:
     return lines
 
 
+def _prefix_comparison(results: Sequence[ConfigResult]) -> list[str]:
+    """Each `<config>_qprefix` next to `<config>`: the same retrieval with and without
+    a query prefix, overall and by question wording."""
+    by_base: dict[str, list[ConfigResult]] = {}
+    for r in results:
+        if "query_prefix" in r.params and r.params.get("parser", MAIN_PARSER) == MAIN_PARSER:
+            by_base.setdefault(r.name.removesuffix(PREFIX_SUFFIX), []).append(r)
+    compared = {base: rows for base, rows in by_base.items() if len(rows) > 1}
+    if not compared:
+        return []
+    lines = [
+        "",
+        "## Query prefix comparison",
+        "",
+        f"Main index. `bge` = BAAI's instruction `{BGE_QUERY_PREFIX.strip()}` put before "
+        "each query (not the chunks, so the index is unchanged); `none` = the query as "
+        "asked. A cross-encoder reads the query without the prefix.",
+        "",
+        "| config | query prefix | Hit@5 | MRR@10 | paraphrased Hit@5 | paraphrased MRR@10 "
+        "| manual wording Hit@5 | manual wording MRR@10 |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for base, rows in compared.items():
+        for r in rows:
+            prefix = r.params["query_prefix"]
+            label = "none" if not prefix else "bge" if prefix == BGE_QUERY_PREFIX else repr(prefix)
+            cells = _subset_cells(r, ("all", "paraphrased", "manual_wording"))
+            lines.append(f"| {base} | {label} | {cells} |")
+    return lines
+
+
 # --- Real configs (CLI) ----------------------------------------------------
 
 
@@ -298,6 +356,27 @@ def _index_params(store: IndexStore) -> dict[str, str]:
         "index_chunks": str(len(chunks)),
         "index_chunks_by_parser": json.dumps(dict(sorted(parsers.items()))),
     }
+
+
+def _v2_config(
+    base: str,
+    index: SearchIndex,
+    default_reranker: str,
+    cross_encoder_for: Callable[[str], CrossEncoder],
+) -> tuple[Retriever, dict[str, str]]:
+    """Retriever and params for a search mode or a `RERANK_VARIANTS` name on `index`."""
+    if base in RERANK_VARIANTS:
+        model, candidates = RERANK_VARIANTS[base]
+        retriever = RerankRetriever(
+            index.retriever("hybrid"), cross_encoder_for(model), candidates=candidates
+        )
+        params = {"mode": "hybrid_rerank", "reranker_model": model}
+        return retriever, params | {"rerank_candidates": str(candidates)}
+    mode = cast(SearchMode, base)
+    params = {"mode": mode}
+    if mode == "hybrid_rerank":
+        params |= {"reranker_model": default_reranker, "rerank_candidates": "20"}
+    return index.retriever(mode), params
 
 
 def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
@@ -323,38 +402,46 @@ def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
                 VARIANT_PARSER[variant],
             )
         )
-    for prefix, store_dir, collection, parser in v2_indexes:
-        modes = [mode for mode in SEARCH_MODES if prefix + mode in names]
-        # Reranker variants run on the main index only.
-        rerank_variants = [name for name in RERANK_VARIANTS if not prefix and name in names]
-        if not modes and not rerank_variants:
+    for name_prefix, store_dir, collection, parser in v2_indexes:
+        bases: list[str] = [mode for mode in SEARCH_MODES if name_prefix + mode in names]
+        prefixed: list[str] = []
+        if not name_prefix:  # reranker and query prefix variants: main index only
+            bases += [name for name in RERANK_VARIANTS if name in names]
+            prefixed = [n.removesuffix(PREFIX_SUFFIX) for n in PREFIX_CONFIGS if n in names]
+        if not bases and not prefixed:
             continue
         store = IndexStore(store_dir)
-        dense = make_dense_index(settings.model_copy(update={"qdrant_collection": collection}))
-        index = SearchIndex(store, dense, cross_encoder)
         index_params = {**common, **_index_params(store), "bm25_idf": "lucene"}
         index_params |= {"qdrant_collection": collection, "parser": parser}
-        for mode in modes:
-            params = {**index_params, "mode": mode}
-            if mode == "hybrid_rerank":
-                params |= {"reranker_model": settings.reranker_model, "rerank_candidates": "20"}
-            configs.append(EvalConfig(prefix + mode, index.retriever(mode), params))
-        for name in rerank_variants:
-            model, candidates = RERANK_VARIANTS[name]
-            params = {**index_params, "mode": "hybrid_rerank", "reranker_model": model}
-            params["rerank_candidates"] = str(candidates)
-            retriever = RerankRetriever(
-                index.retriever("hybrid"), cross_encoder_for(model), candidates=candidates
+        # The prefix is set explicitly (not from .env), so `dense` always means "no prefix".
+        for query_prefix, suffix, wanted in (
+            ("", "", bases),
+            (BGE_QUERY_PREFIX, PREFIX_SUFFIX, prefixed),
+        ):
+            if not wanted:
+                continue
+            update = {"qdrant_collection": collection, "embedding_query_prefix": query_prefix}
+            index = SearchIndex(
+                store, make_dense_index(settings.model_copy(update=update)), cross_encoder
             )
-            configs.append(EvalConfig(name, retriever, params))
+            for base in wanted:
+                retriever, params = _v2_config(
+                    base, index, settings.reranker_model, cross_encoder_for
+                )
+                if params["mode"] != "bm25":  # BM25 never embeds the query
+                    params["query_prefix"] = query_prefix
+                configs.append(
+                    EvalConfig(name_prefix + base + suffix, retriever, {**index_params, **params})
+                )
     for config in V1_CONFIGS:
         if config not in names:
             continue
         collection = v1_collection(settings.qdrant_collection, config)
         store = IndexStore(v1_store_dir(settings.data_index_dir, config))
-        dense = make_dense_index(settings.model_copy(update={"qdrant_collection": collection}))
+        update = {"qdrant_collection": collection, "embedding_query_prefix": ""}  # v1 used none
+        dense = make_dense_index(settings.model_copy(update=update))
         params = {**common, **_index_params(store), "mode": "v1_hybrid", "bm25_idf": "okapi"}
-        params["qdrant_collection"] = collection
+        params |= {"qdrant_collection": collection, "query_prefix": ""}
         configs.append(EvalConfig(config, make_v1_retriever(store, dense), params))
     return configs
 
