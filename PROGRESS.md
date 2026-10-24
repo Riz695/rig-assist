@@ -5,9 +5,10 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 0 (Scaffold): **done.** [PR #1](https://github.com/Riz695/rig-assist/pull/1) merged into `main` on 2026-10-21 (merged by Claude at the user's request, with a merge commit so the test-first history is kept).
-- **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21: v1 described accurately; pivot adopted (olmOCR 2 ingestion, fine-tuning, MLflow, LangGraph, no LlamaIndex, Docker Cloud Sandboxes for long jobs). `PLAN.md` on `main` is the plan to follow.
-- **Phase 1 in progress** (started 2026-10-22) on branch `phase-1-api` (pushed). Done: chunking, BM25, text-layer parser, OCR client + page cache + routing, ingestion pipeline + `make ingest`. OCR done on a rented GPU (all 982 pages cached in `data/parsed/`, scanned manual searchable). API, Docker and compose done; **Phase 1 acceptance passed 2026-10-23** (compose up → healthy → Swagger → upload 201 → /search with page numbers; all 6 manuals searchable incl. the scanned one). `sbx` verified and `docs/cloud-jobs.md` written (user chose to do it now). **Phase 1 PR: [#3](https://github.com/Riz695/rig-assist/pull/3), awaiting the user's review** (don't merge it myself). Then Phase 2 on a new branch `phase-2-hybrid`. Still to log: final RunPod cost.
+- **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23. **All tasks done 2026-10-24; [PR #4](https://github.com/Riz695/rig-assist/pull/4) open, waiting for the user's review.**
+- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
+- **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
+- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24. **Next:** user reviews/merges the Phase 2 PR; then Phase 3 (evaluation).
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -20,6 +21,13 @@ Running log of what's done, so any new session (or person) can pick up where the
     - Fallback in PLAN.md: official olmocr pipeline with vLLM on a rented GPU (estimate cost, ask the user first). olmOCR needs an NVIDIA GPU with >= 12 GB (README: tested on RTX 4090, L40S, A100, H100) and ~30 GB disk. vLLM serves an OpenAI-compatible `/v1`, so our client works unchanged (`OCR_BASE_URL=http://<pod>:8000/v1`, model `allenai/olmOCR-2-7B-1025-FP8`). Estimate on a RunPod RTX 4090 ($0.34/h community, $0.69/h secure, per-second billing, price snapshots mid-2026): ~1 h including setup → **about $0.35–0.70, under $2 with margin**. **2026-10-23: user chose this (option 2).** Steps in `docs/ocr-gpu.md` (RunPod RTX 4090, PyTorch template + web terminal, `pip install vllm==0.11.2`, `vllm serve allenai/olmOCR-2-7B-1025-FP8 --max-model-len 16384 --limit-mm-per-prompt '{"video": 0}'`, key via `VLLM_API_KEY`). Waiting for the user to deploy the pod. OCR is sequential (one page at a time): measure s/page first; add concurrency only if the full 982-page run would be slow.
     - 2026-10-23: user put the key in `.env` and also in `.env.example`; caught before any commit (not in tracked files or history), `.env.example` restored, pre-commit hook `no-secrets-in-env-example` added (`de94f5e`).
   - [x] `sbx`: **verified 2026-10-23** (user logged in; daemon healthy). Cloud sandboxes work for code/data in, `uv sync` + tests, `make ingest`, Docker + Qdrant inside, proxy-injected secrets, results out, stop/resume. Details and exact commands in `docs/cloud-jobs.md`.
+
+## Phase 2 acceptance (checked 2026-10-24)
+
+- ✅ All four modes work through the API: `docker compose up --build` (image + Qdrant by service name), `/search` with `bm25` 0.37 s, `dense` 0.58 s, `hybrid` 0.05 s, `hybrid_rerank` 17.8 s (first call, model load); 6 docs / 1,316 chunks; scanned-manual OCR pages retrieved; no errors in API logs.
+- ✅ RRF fusion tests with deterministic fake rankings (`tests/test_hybrid.py`); idempotent ingestion in both indexes (`tests/test_pipeline.py`, `tests/test_api_documents.py`, `tests/test_v1_baseline.py`); mode dispatch with fakes (`tests/test_search_service.py`).
+- ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
+- User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
 
 ## Phase 0: Scaffold
 
@@ -50,6 +58,19 @@ Branch `phase-1-api`.
 | `sbx` verification + `docs/cloud-jobs.md` | `2d785a8` docs | `Tasks/P1 - Cloud sandboxes for long jobs.md` |
 | Docker: multi-stage `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `make up/down`, CI image check; `.env` inline-comment fix | `d3beef8` fix → `e0bd443` feat → `de904e2` ci | `Tasks/P1 - Docker and docker compose.md` |
 | OCR on a rented GPU: guide, concurrent OCR (`OCR_CONCURRENCY`), unfinished pages reported missing (token limit, timeouts, 524) | `44dc645`, `c350001` docs; `ab48067` test → `22babc9` test → `7cfb56e` feat; `9044ddc` → `67ee4f1` test → `3f3e458` feat; `30671a9` test → `967e501` feat | `Tasks/P1 - OCR on a rented GPU.md` |
+
+## Phase 2: Hybrid retrieval + rerank
+
+Branch `phase-2-hybrid`.
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
+| RRF fusion + `HybridRetriever` (ported from v1) | `b6865dd` test → `b026266` feat | `Tasks/P2 - RRF and hybrid retriever.md` |
+| Ingestion into both indexes (store + Qdrant), `make ingest` checks Qdrant / `--skip-dense`, `MODELS_DIR` | `5cfd819` test → `6b5bada` feat → `46d08e0` chore | `Tasks/P2 - Ingestion into both indexes.md` |
+| Dense retrieval: fastembed embedder, Qdrant `DenseIndex`, Qdrant in compose; dot-leader cleaning (truncation fix) | `1ad5f24` test → `52ec3d1` feat; `14a62c9` test → `1e59ada` feat; `793ecbe` feat (compose) | `Tasks/P2 - Dense retrieval with Qdrant.md` |
+| Cross-encoder reranker: `CrossEncoder` protocol, `FastEmbedCrossEncoder`, `RerankRetriever` (top-20 candidates); CPU speed measured | `2826762` test → `06f8733` feat | `Tasks/P2 - Cross-encoder reranker.md` |
+| `/search` modes (`SearchIndex.retriever(mode)`), uploads write Qdrant, 409 (dense index empty) / 503 (Qdrant down), `dense_score` in results | `20f0b90` test → `f7424ea` feat | `Tasks/P2 - Search modes in the API.md` |
+| v1 baseline: `v1_baseline` (v1 parser) + `v1_retrieval_on_v2_pages`, own stores/collections, Okapi IDF option, `make ingest-v1`; pypdf 6.20.0 | `076e58b` chore → `b7a5bcf` test → `0ff91b7` feat | `Tasks/P2 - v1 baseline configs.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -88,6 +109,15 @@ Branch `phase-1-api`.
 - 2026-10-23: Docker Compose parses `KEY=   # comment` as the value `# comment` (python-dotenv gives `""`): comments for empty values now sit on their own line in `.env.example` and the user's `.env`; pre-commit rule `no-inline-comment-on-empty-env-value` enforces it. Check what containers get with `docker compose config`.
 - 2026-10-23: Local Docker: Docker Desktop must be running (`systemctl --user start docker-desktop`) and the context set (`docker context use desktop-linux`, now the default). Its credential store (`credsStore: desktop` → pass → GPG) needs the GPG passphrase for Docker Hub pulls: run one `docker pull` in an interactive terminal first; non-interactive builds then work while gpg-agent caches it.
 - 2026-10-23: `sbx` cloud facts: shell sandbox = Ubuntu 26.04, 2 CPU / 3.8 GiB / 20 GB, Python 3.14, uv 0.13.4, Docker 29.9 + Compose. Create 8 s, resume 4 s, copy ~1.2 MB/s, `make ingest` 54 s (laptop 58 s) with a byte-identical index. Secrets: custom secrets put a placeholder in the env and the proxy sets the header on requests to an exact host; **they attach only at sandbox creation**. Docker Hub pulls need `production.cloudfront.docker.com` allowed.
+- 2026-10-23: RRF: `reciprocal_rank_fusion(lists, k=60, top_n)`, ties by chunk_id; `HybridRetriever` asks each retriever for `k_each=20` and keeps the dense cosine score on fused results (`ScoredChunk.dense_score`) for Phase 3's "not found" threshold. `Retriever` protocol = `search(query, k) -> list[ScoredChunk]`.
+- 2026-10-23: Dense: fastembed 0.9.0 `BAAI/bge-small-en-v1.5` (384-dim, 67 MB quantized ONNX, loaded on first use); qdrant-client 1.19.1 + server `v1.19.2-unprivileged` (same minor; 1.20.0 was a day old). Point id = UUID5(chunk_id), payload = Chunk; re-ingest = delete the doc's points then upsert. **No query prefix** by default (v1 used none and fastembed adds none); `FastEmbedEmbedder(query_prefix=...)` lets Phase 3 test BAAI's "Represent this sentence for searching relevant passages: ". Real run: 1,316 chunks embedded in 272 s on CPU (206 ms/chunk), queries 70–110 ms.
+- 2026-10-23: **Embedding truncation measured** (Phase 1 open question): 46/1,328 chunks (3.5%) were over bge's 512 WordPiece tokens, losing 7.8% of all tokens. Cause: dot leaders in tables of contents (one WordPiece token per dot; a 487-cl100k-token TOC chunk was 4,909 bge tokens) and OCR HTML tables. Fix: collapse runs of 4+ dots to "…" in cleaning → 22 chunks (1.7%), 0.57% of tokens cut, max 770; all remaining in the scanned manual's HTML tables (Phase 3 candidate: HTML→Markdown tables or a smaller chunk size).
+- 2026-10-23: Ingestion writes the dense index **before** the chunk store (the store's document list = "fully ingested" marker). `make ingest` needs Qdrant (checked up front, fails in ~2 s with "docker compose up -d qdrant"); `--skip-dense` = BM25 only. Real runs: 1,316 chunks → 1,316 Qdrant points, twice (idempotent), ~300 s each (embedding dominates). Model cached in `data/models/` (65 MB). `QdrantClient(check_compatibility=False)` so creating it doesn't call the server (versions pinned instead).
+- 2026-10-24: **Reranker CPU speed measured** (12 threads, 20 real BM25 candidates/query, 5 queries): `BAAI/bge-reranker-base` (1.04 GB fp32 ONNX) **~10.7 s/query**, 2.7 GB peak RAM; `Xenova/ms-marco-MiniLM-L-6-v2` (80 MB) ~2.4 s, 1.4 GB; `jinaai/jina-reranker-v1-tiny-en` (130 MB) ~2.0 s, 1.4 GB. bge-base stays the default (`RERANKER_MODEL`, plan), fine for offline eval (~11 min for 60 questions) but slow for a live demo, worse on 1–2 vCPU Azure. **Phase 3:** compare Hit@1/MRR **and** latency for the three models (and 10 vs 20 candidates) before picking the served one. Logits observed -5.7..+2.4 (bge-base); `RerankRetriever` keeps `dense_score` for the threshold. Integration test uses MiniLM (80 MB) to keep CI downloads small.
+- 2026-10-24: API search modes: `SearchMode` Literal in `retrieval/service.py` is the single source (Pydantic 422 for others). `create_app(settings, dense=None, cross_encoder=None)` injects fakes in tests; real ones are lazy, so the app starts with Qdrant down. Qdrant unreachable (`ResponseHandlingException`) → 503 on dense modes and uploads, BM25 keeps working; store has docs but Qdrant empty (`--skip-dense`) → 409. Default mode stays `bm25` until Phase 3 picks one. Real API run, full corpus: bm25 0.25 s, dense 0.57 s (first call), hybrid 0.13 s, hybrid_rerank 10.6 s (14.8 s first call).
+- 2026-10-24: **v1 baseline = two configs (user's decision):** `v1_baseline` = v1 end to end (ported `src/rag/parsing.py`: pypdf text + pdfplumber tables, v1 header stripping, no OCR; v1 token-window chunker; Okapi BM25; dense; RRF k=60, 20 each) and `v1_retrieval_on_v2_pages` = the same chunking/retrieval on v2's parsed pages (ablation: pages vs retrieval). **Embedder: fastembed quantized ONNX bge-small (user's decision), not v1's sentence-transformers fp32**; measure the ranking difference in Phase 5 when torch is in the `train` group. Chunk IDs use v2 doc_id. Stores in `data/index/baselines/<config>/`, Qdrant collections `rig_assist_chunks__<config>`. Not an API mode. v1's own chunking/parsing tests ported. `BM25Index(idf="lucene"|"okapi")`; Okapi scores tested equal to rank-bm25 `BM25Okapi`.
+- 2026-10-24: `OCR_MODE=missing make ingest-v1` (OCR from cache, no GPU): 9 min 50 s for both. `v1_baseline` 1,142 chunks (Marine scanned manual: 0 chunks, as v1); `v1_retrieval_on_v2_pages` 1,296; v2 main 1,316. Store counts = Qdrant counts. pypdf warns about missing fontTools (CFF fonts in one manual); v1 had the same, kept.
+- 2026-10-24: **The user's `.env` has `OCR_MODE=off`**, but the v2 main index was built with `missing`. A plain `make ingest` now would drop the scanned manual. Phase 3: pin the OCR mode used for each index (e.g. record it in `DocumentInfo` or the eval run params) so results are reproducible.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -102,9 +132,11 @@ Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any r
 | | | | | | $250.00 |
 | 2026-10-23 | `sbx` verification: 2 shell sandboxes (install, tests, ingest, Qdrant, secret test) | 2 CPU / 4 GiB | ~0.13 (8 min) | < $0.15 (est.; check Docker billing) | ~$249.85 (est.) |
 
-OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time incl. setup and debugging. **Provisional (user, 2026-10-23): RunPod showed $1.236 billed; balance went from $10.00 to $7.87 ($2.13). Billing lags ~1 h; final figure to follow.**
+OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time incl. setup and debugging. **Final (RunPod daily billing CSV, 2026-10-23): $1.563 total = GPU $1.551 + storage $0.012.** The user's balance dropped $2.13 ($10.00 → $7.87); the extra ~$0.57 isn't in the billing summary (pending hold or later charge; user to check if it doesn't return).
 
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
+
+Phase 2: fastembed 0.9.0 (onnxruntime 1.31.0, tokenizers 0.23.3) · qdrant-client 1.19.1 · Qdrant server v1.19.2
 
 Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4 · pdfplumber 0.11.10 (pypdfium2 5.14.0, pillow 13.0.0) · openai 3.28.0 · OCR server: vLLM 0.11.2 + allenai/olmOCR-2-7B-1025-FP8
 
@@ -112,8 +144,8 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 
 ## Deferred / known gaps
 
-- **Phase 2:** `v1_baseline` needs v1's exact token-window chunker (`chunk_text` in v1's `src/rag/chunking.py`, 12 lines); not ported yet.
-- **Phase 2:** check embedding truncation: 500 cl100k tokens can exceed bge-small's 512 WordPiece limit. Measure on the corpus; lower the chunk size for dense retrieval if many chunks are cut.
+- **Phase 3:** 22 chunks (1.7%) still exceed bge-small's 512 tokens, all OCR HTML tables in the scanned manual: candidate fix = HTML→Markdown tables or smaller chunks, measured on the eval set.
+- **Phase 3:** reranker model choice (bge-base 10.7 s/query vs MiniLM-L6 2.4 s vs jina-tiny 2.0 s) and candidate count, by quality and latency.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
 - `make eval` is a placeholder that exit with an error until their phase.
@@ -121,4 +153,6 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - OCR: rotated pages not handled (olmOCR returns `is_rotation_valid`/`rotation_correction`; its pipeline re-renders rotated). Cache key doesn't include model/prompt version. Check both once real output exists.
 - A PDF deleted from `data/raw/` stays in the index (`IndexStore` has no `remove`). Add with the delete/upload API if needed.
 - No upload size limit on `POST /documents` (would return 413); no document delete endpoint.
-- No readiness check yet (would check Qdrant/index); add when those dependencies exist.
+- Re-ingesting unchanged manuals re-embeds everything (~5 min). Could skip documents whose file hash and pipeline settings are unchanged; not needed yet.
+- No readiness check yet (would check Qdrant/index): Qdrant now exists, so add `/ready` with the Phase 8 health probes.
+- Reranker model load failures (no network on first use) surface as a 500, not a clear 503.

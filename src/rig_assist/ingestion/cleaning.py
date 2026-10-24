@@ -10,6 +10,20 @@ from dataclasses import replace
 
 from rig_assist.ingestion.models import ParsedPage
 
+# 4+ dots, optionally spaced (". . . ."), plus surrounding spaces: a table-of-contents leader.
+# [ \t] not \s, so a leader never swallows a line break.
+_DOT_LEADER = re.compile(r"[ \t]*(?:\.[ \t]?){4,}[ \t]*")
+
+
+def collapse_dot_leaders(text: str) -> str:
+    """'INTRODUCTION........7' → 'INTRODUCTION … 7'.
+
+    Dot leaders carry no meaning but cost one token per dot in the embedding model's
+    WordPiece tokenizer (few in cl100k), so table-of-contents chunks overflowed its
+    512-token limit and were cut. Three dots ("wait...") and decimals are untouched.
+    """
+    return _DOT_LEADER.sub(" … ", text)
+
 
 def _line_key(line: str) -> str:
     """Normalise digits and spacing so "Page 2 of 205" and "Page 90 of 205" match."""

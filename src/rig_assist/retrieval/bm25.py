@@ -8,11 +8,12 @@ from them in memory (milliseconds for a few thousand chunks).
 Second change: the IDF formula. rank-bm25's Okapi IDF, ln(N - n + 0.5) - ln(n + 0.5),
 is 0 for a term in 1 of 2 chunks and negative above half, so a fresh index with one
 small manual finds nothing. We use Lucene's IDF (also Elasticsearch's), which is always
-positive. Phase 2's `v1_baseline` keeps Okapi's to reproduce v1.
+positive. `idf="okapi"` keeps rank-bm25's own formula, used by the v1 baseline.
 """
 
 import math
 import re
+from typing import Literal
 
 from rank_bm25 import BM25Okapi
 
@@ -37,15 +38,23 @@ class _LuceneIdfBM25(BM25Okapi):
             )
 
 
+Idf = Literal["lucene", "okapi"]
+_MODELS: dict[str, type[BM25Okapi]] = {"lucene": _LuceneIdfBM25, "okapi": BM25Okapi}
+
+
 class BM25Index:
-    def __init__(self, chunks: list[Chunk]) -> None:
+    def __init__(self, chunks: list[Chunk], idf: Idf = "lucene") -> None:
+        if idf not in _MODELS:
+            raise ValueError(f"unknown idf {idf!r}: use 'lucene' or 'okapi'")
         self._chunks = chunks
+        self.idf = idf
         # rank-bm25 divides by the corpus size, so an empty corpus has no model.
-        self._bm25 = _LuceneIdfBM25([tokenize(c.text) for c in chunks]) if chunks else None
+        model = _MODELS[idf]
+        self._bm25 = model([tokenize(c.text) for c in chunks]) if chunks else None
 
     @classmethod
-    def build(cls, chunks: list[Chunk]) -> "BM25Index":
-        return cls(list(chunks))
+    def build(cls, chunks: list[Chunk], idf: Idf = "lucene") -> "BM25Index":
+        return cls(list(chunks), idf=idf)
 
     def __len__(self) -> int:
         return len(self._chunks)

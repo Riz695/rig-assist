@@ -86,3 +86,49 @@ class FakeOcr:
 
 def no_sleep(_: float) -> None:
     pass
+
+
+class KeywordEmbedder:
+    """Fake embedder: one dimension per keyword, so similarity is predictable.
+
+    "Check the mud pump" → mostly the 'pump' and 'mud' directions. A query about pumps is
+    always nearest to the pump chunk, whatever a real model would do.
+    """
+
+    KEYWORDS = ("pump", "bop", "riser", "crane", "mud", "kick")
+
+    def __init__(self, query_prefix: str = "") -> None:
+        self.query_prefix = query_prefix
+        self.passage_calls = 0
+        self.queries: list[str] = []
+
+    @property
+    def dim(self) -> int:
+        return len(self.KEYWORDS) + 1
+
+    def _vector(self, text: str) -> list[float]:
+        words = text.lower()
+        vector = [float(words.count(keyword)) for keyword in self.KEYWORDS]
+        vector.append(0.1)  # never all zeros (cosine is undefined for a zero vector)
+        norm = sum(x * x for x in vector) ** 0.5
+        return [x / norm for x in vector]
+
+    def embed_passages(self, texts: list[str]) -> list[list[float]]:
+        self.passage_calls += 1
+        return [self._vector(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        self.queries.append(text)
+        return self._vector(self.query_prefix + text)
+
+
+class FakeCrossEncoder:
+    """Scores a text by how many query words it contains; records every call."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def score(self, query: str, texts: list[str]) -> list[float]:
+        self.calls.append((query, texts))
+        words = set(query.lower().split())
+        return [float(len(words & set(text.lower().split()))) for text in texts]

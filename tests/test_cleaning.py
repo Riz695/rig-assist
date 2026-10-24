@@ -1,4 +1,6 @@
-from rig_assist.ingestion.cleaning import strip_repeated_lines
+import pytest
+
+from rig_assist.ingestion.cleaning import collapse_dot_leaders, strip_repeated_lines
 from rig_assist.ingestion.models import ParsedPage
 
 WORDS = [
@@ -76,3 +78,39 @@ def test_empty_pages_do_not_lower_the_threshold() -> None:
     result = strip_repeated_lines(make_pages(lines))
     assert texts(result)[:6] == WORDS[:6]
     assert texts(result)[6:] == [""] * 6
+
+
+# --- dot leaders (tables of contents) -----------------------------------
+# A run of dots costs a few tokens in cl100k but one token per dot in the embedding
+# model's WordPiece tokenizer, so TOC chunks blew past its 512-token limit.
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("1 INTRODUCTION......................7", "1 INTRODUCTION … 7"),
+        ("Section 1 Classification.............3", "Section 1 Classification … 3"),
+        ("7.11 Pressure Equipment . . . . . . . . . . 38", "7.11 Pressure Equipment … 38"),
+        ("(IRC) .............................205", "(IRC) … 205"),
+    ],
+)
+def test_collapse_dot_leaders(line: str, expected: str) -> None:
+    assert collapse_dot_leaders(line) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Pressure is 3.5 psi.",
+        "Wait... then close the valve.",
+        "See sections 4.4.1 and 4.4.2.",
+        "U.S.A. regulations",
+    ],
+)
+def test_collapse_dot_leaders_keeps_ordinary_text(text: str) -> None:
+    assert collapse_dot_leaders(text) == text
+
+
+def test_strip_repeated_lines_is_unaffected_by_leader_collapsing() -> None:
+    pages = make_pages([["Contents", f"{w} section........{i}"] for i, w in enumerate(WORDS)])
+    assert all("…" not in p.text for p in strip_repeated_lines(pages))

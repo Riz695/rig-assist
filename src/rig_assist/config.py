@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     data_raw_dir: Path = Path("data/raw")
     data_index_dir: Path = Path("data/index")
     data_parsed_dir: Path = Path("data/parsed")  # OCR page cache
+    models_dir: Path = Path("data/models")  # downloaded embedding/reranker models
     job_db_path: Path = Path("data/jobs.sqlite")
 
     # --- OCR (olmOCR 2 via any OpenAI-compatible endpoint) ---

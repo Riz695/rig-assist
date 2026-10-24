@@ -1,7 +1,8 @@
 """`python -m rig_assist.ingestion` (what `make ingest` runs).
 
-Ingests every PDF in DATA_RAW_DIR into DATA_INDEX_DIR, using OCR_MODE and the OCR
-settings from the environment / .env, and prints a summary table.
+Ingests every PDF in DATA_RAW_DIR into both indexes (the chunk store in DATA_INDEX_DIR
+for BM25, and Qdrant for dense search), using OCR_MODE and the OCR settings from the
+environment / .env, and prints a summary table. --skip-dense = BM25 only (no Qdrant).
 """
 
 import argparse
@@ -13,13 +14,35 @@ from rig_assist.ingestion.cache import PageCache
 from rig_assist.ingestion.parsers.olmocr import OcrFailedError
 from rig_assist.ingestion.pipeline import ingest_directory, make_ocr_client
 from rig_assist.ingestion.store import IndexStore
+from rig_assist.retrieval.dense import DenseIndex, make_dense_index
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Ingest the PDF manuals into the index.")
-    parser.parse_args(argv)  # no options yet; gives --help for free
+    parser = argparse.ArgumentParser(description="Ingest the PDF manuals into the indexes.")
+    parser.add_argument(
+        "--skip-dense",
+        action="store_true",
+        help="BM25 index only: don't embed chunks into Qdrant (no Qdrant needed)",
+    )
+    args = parser.parse_args(argv)
     settings = get_settings()
     logging.basicConfig(level=settings.log_level, format="%(levelname)s %(message)s")
+    # huggingface_hub checks the Hub for model updates on every run (a dozen requests even
+    # when the model is cached); its HTTP client logs each one at INFO.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    dense: DenseIndex | None = None
+    if not args.skip_dense:
+        dense = make_dense_index(settings)
+        try:
+            dense.client.get_collections()  # fail now, not after a minute of parsing
+        except Exception as error:  # connection refused, DNS, auth...
+            print(
+                f"Can't reach Qdrant at {settings.qdrant_url}: {error}\n"
+                "Start it with `docker compose up -d qdrant`, or run with --skip-dense.",
+                file=sys.stderr,
+            )
+            return 1
 
     store = IndexStore(settings.data_index_dir)
     try:
@@ -30,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
             ocr_client=make_ocr_client(settings),
             cache=PageCache(settings.data_parsed_dir),
             ocr_concurrency=settings.ocr_concurrency,
+            dense=dense,
         )
     except (OcrFailedError, ValueError, FileNotFoundError) as error:
         print(f"Ingestion failed: {error}", file=sys.stderr)
@@ -40,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{info.doc_id:48} {info.pages:5} {info.chunks:6} {len(info.missing_pages):7}")
     print(
         f"{len(infos)} documents, {sum(i.chunks for i in infos)} chunks → {settings.data_index_dir}"
+        + ("" if dense is None else f" + Qdrant '{settings.qdrant_collection}'")
     )
     if any(info.missing_pages for info in infos) and settings.ocr_mode == "off":
         print("Some pages have no text layer and OCR_MODE=off: they are not searchable.")

@@ -131,3 +131,35 @@ def test_search_works_on_a_single_chunk_index() -> None:
 def test_a_term_found_in_most_chunks_still_scores_above_zero(chunks: list[Chunk]) -> None:
     common = [make_chunk(f"pump note {i}", page=i) for i in range(1, 5)] + chunks
     assert all(r.score > 0 for r in BM25Index.build(common).search("pump", k=10))
+
+
+# --- Okapi IDF (v1's formula, for the v1 baseline) ------------------------
+
+
+def test_okapi_idf_reproduces_v1s_blind_spot_on_a_two_chunk_corpus() -> None:
+    # Okapi IDF = ln(N - n + 0.5) - ln(n + 0.5) = ln(1.5 / 1.5) = 0 for 1 of 2 chunks.
+    two = [make_chunk("mud pump liners", page=1), make_chunk("riser tension", page=2)]
+    assert BM25Index(two, idf="okapi").search("liners", k=5) == []
+    assert BM25Index(two, idf="lucene").search("liners", k=5)[0].chunk.page == 1
+
+
+def test_okapi_scores_match_rank_bm25s_plain_okapi_exactly(chunks: list[Chunk]) -> None:
+    from rank_bm25 import BM25Okapi
+
+    plain = BM25Okapi([tokenize(c.text) for c in chunks])
+    expected = plain.get_scores(tokenize("pressure tested riser"))
+    hits = BM25Index(chunks, idf="okapi").search("pressure tested riser", k=len(chunks))
+    by_page = {hit.chunk.page: hit.score for hit in hits}
+    for chunk, score in zip(chunks, expected, strict=True):
+        if score > 0:
+            assert by_page[chunk.page] == pytest.approx(score)
+
+
+def test_lucene_is_the_default_idf(chunks: list[Chunk]) -> None:
+    assert BM25Index(chunks).idf == "lucene"
+    assert BM25Index.build(chunks, idf="okapi").idf == "okapi"
+
+
+def test_an_unknown_idf_raises(chunks: list[Chunk]) -> None:
+    with pytest.raises(ValueError, match="idf"):
+        BM25Index(chunks, idf="tfidf")  # type: ignore[arg-type]

@@ -11,12 +11,12 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
 from rig_assist.ingestion.cache import PageCache, file_sha256
-from rig_assist.ingestion.cleaning import strip_repeated_lines
+from rig_assist.ingestion.cleaning import collapse_dot_leaders, strip_repeated_lines
 from rig_assist.ingestion.models import ParsedPage
 from rig_assist.ingestion.parsers import olmocr
 from rig_assist.ingestion.parsers.olmocr import (
@@ -161,8 +161,9 @@ def parse_document(
 
     if missing:
         logger.warning("%s: no text on pages %s", path.name, missing)
+    cleaned = [replace(page, text=collapse_dot_leaders(page.text)) for page in pages]
     return ParseResult(
-        pages=strip_repeated_lines(pages),
+        pages=strip_repeated_lines(cleaned),
         missing_pages=missing,
         ocr_pages=len(new_results),
         ocr_cached_pages=len(ocr_results) - len(new_results),
