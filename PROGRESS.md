@@ -5,11 +5,11 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23. **All tasks done 2026-10-24; [PR #4](https://github.com/Riz695/rig-assist/pull/4) open, waiting for the user's review.**
-- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
+- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). No Phase 3 task started yet: begin with "Phase 3: start here" below.
+- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
-- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24. **Next:** user reviews/merges the Phase 2 PR; then Phase 3 (evaluation).
-- **Blockers for Phase 1:**
+- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
+- **Blockers for Phase 1 (all resolved, kept for history):**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
   - [x] v1 repo: https://github.com/Riz695/offshore-drilling-rag (linked in `PLAN.md` via PR #2)
@@ -71,6 +71,35 @@ Branch `phase-2-hybrid`.
 | Cross-encoder reranker: `CrossEncoder` protocol, `FastEmbedCrossEncoder`, `RerankRetriever` (top-20 candidates); CPU speed measured | `2826762` test → `06f8733` feat | `Tasks/P2 - Cross-encoder reranker.md` |
 | `/search` modes (`SearchIndex.retriever(mode)`), uploads write Qdrant, 409 (dense index empty) / 503 (Qdrant down), `dense_score` in results | `20f0b90` test → `f7424ea` feat | `Tasks/P2 - Search modes in the API.md` |
 | v1 baseline: `v1_baseline` (v1 parser) + `v1_retrieval_on_v2_pages`, own stores/collections, Okapi IDF option, `make ingest-v1`; pypdf 6.20.0 | `076e58b` chore → `b7a5bcf` test → `0ff91b7` feat | `Tasks/P2 - v1 baseline configs.md` |
+
+## Phase 3: Evaluation
+
+Branch `phase-3-eval`. The most important phase for the portfolio (see `PLAN.md` → Phase 3).
+
+### Phase 3: start here
+
+State of the data on 2026-10-24 (all local, gitignored; rebuild commands in brackets):
+- v2 main index: 6 docs, 1,316 chunks in `data/index/` + Qdrant `rig_assist_chunks` (`make ingest`, ~5 min).
+- v1 baselines: `v1_baseline` 1,142 chunks, `v1_retrieval_on_v2_pages` 1,296, in `data/index/baselines/<config>/` + Qdrant `rig_assist_chunks__<config>` (`make ingest-v1`, ~10 min).
+- OCR cache: all 982 pages in `data/parsed/` (olmOCR 2). `.env` now has `OCR_MODE=missing` (user, 2026-10-24), matching how both v2 indexes were built; cached pages cost nothing.
+- Models cached in `data/models/`: bge-small, bge-reranker-base (1 GB), MiniLM-L6, jina-tiny.
+- Qdrant runs in Docker (`docker compose up -d qdrant`; Docker Desktop must be running).
+
+Order of work (from `PLAN.md`):
+1. **Tests first:** metric functions (Hit@k, MRR@k with edge cases), eval-set validator (missing fields, unknown doc_id, page out of range, duplicate IDs, `evidence_quote` must appear on the stated page), refusal metrics (precision/recall of "not found" at a threshold).
+2. **Build `eval/questions.jsonl`** (40–60 entries) by reading the manuals directly: PDF page numbers (1-based, not printed numbers), paraphrased questions (~30% different vocabulary), spread over all 6 manuals incl. the scanned one and table pages, mixed types, ~10% unanswerable. Evidence quotes from the text layer, or from the OCR cache for scanned pages. Write `eval/README.md`. **Print 10 random questions with evidence and stop for the user's spot-check before using the set. Then freeze it** (changes only with a reason in `eval/CHANGELOG.md`).
+3. **Check MLflow's current docs, pin it**, then `run_retrieval_eval.py`: Hit@1, Hit@5, MRR@10, p50/p95 latency for `bm25`, `dense`, `hybrid`, `hybrid_rerank`, `v1_baseline`, `v1_retrieval_on_v2_pages`; per parser and for table / scanned-manual questions; "not found" threshold: v1's fixed 0.6 vs one chosen on the set (note the tuning-on-test-set risk). Log runs to MLflow; commit Markdown tables to `eval/results/`; make `make eval` work. Use a Docker Cloud Sandbox if the sweep is slow (estimate; ask above $20).
+4. Answer eval (`run_answer_eval.py`) comes **after Phase 4**.
+
+Open items to measure in Phase 3 (from Phase 2):
+- Reranker model and candidate count by quality **and** latency: bge-reranker-base ~10.7 s/query vs MiniLM-L6 2.4 s vs jina-tiny 2.0 s (CPU, 20 candidates); also 10 vs 20 candidates. Pick the served one from the numbers.
+- BGE query prefix ("Represent this sentence for searching relevant passages: "): `FastEmbedEmbedder(query_prefix=...)` exists; measure with vs without.
+- 22 chunks (1.7%) still exceed bge-small's 512 tokens (OCR HTML tables in the scanned manual): measure whether HTML→Markdown tables or smaller chunks help.
+- Default `/search` mode is still `bm25`: choose the default from the results.
+- Record the OCR mode/parser settings each index was built with, so eval runs are reproducible (logged as MLflow params).
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
 
 ## Decisions made during the project (beyond PLAN.md)
 
