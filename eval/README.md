@@ -43,7 +43,8 @@ Marine manual. Steps:
    asked-for value doesn't.
 5. Validated with `rig_assist.evaluation.eval_set` (schema, page ranges, duplicate ids, and
    each `evidence_quote` must appear on a stated page, ignoring case and line breaks).
-6. A random sample of 10 was spot-checked by the project owner before freezing.
+6. A random sample of 10 (seed 20261024) was spot-checked by the project owner, incl. 3
+   scanned-manual quotes against the page images, and approved; the set was frozen on 2026-10-24.
 
 Check it yourself:
 
