@@ -101,6 +101,7 @@ Open items to measure in Phase 3 (from Phase 2):
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
 | Metrics: `first_relevant_rank`, `hit_at_k`, `reciprocal_rank_at_k` on (doc_id, page); `refusal_metrics` (refused = positive class, score == threshold answered, nothing retrieved = refused, undefined precision/recall = None) | `f97d11e` test → `ce7d392` feat | `Tasks/P3 - Retrieval and refusal metrics.md` |
+| Eval-set validator: `EvalQuestion` (Pydantic, extra fields forbidden, answerable/unanswerable consistency), `validate_eval_set` (every error with line + id; duplicate ids; unknown doc_id; page out of range; quote on a stated page, ignoring case/spacing), `load_eval_set`, `load_reference_pages` (text layer, OCR cache for scans) | `ded28c7` test → `b8c7b25` feat | `Tasks/P3 - Eval-set validator.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -148,6 +149,7 @@ Open items to measure in Phase 3 (from Phase 2):
 - 2026-10-24: **v1 baseline = two configs (user's decision):** `v1_baseline` = v1 end to end (ported `src/rag/parsing.py`: pypdf text + pdfplumber tables, v1 header stripping, no OCR; v1 token-window chunker; Okapi BM25; dense; RRF k=60, 20 each) and `v1_retrieval_on_v2_pages` = the same chunking/retrieval on v2's parsed pages (ablation: pages vs retrieval). **Embedder: fastembed quantized ONNX bge-small (user's decision), not v1's sentence-transformers fp32**; measure the ranking difference in Phase 5 when torch is in the `train` group. Chunk IDs use v2 doc_id. Stores in `data/index/baselines/<config>/`, Qdrant collections `rig_assist_chunks__<config>`. Not an API mode. v1's own chunking/parsing tests ported. `BM25Index(idf="lucene"|"okapi")`; Okapi scores tested equal to rank-bm25 `BM25Okapi`.
 - 2026-10-24: `OCR_MODE=missing make ingest-v1` (OCR from cache, no GPU): 9 min 50 s for both. `v1_baseline` 1,142 chunks (Marine scanned manual: 0 chunks, as v1); `v1_retrieval_on_v2_pages` 1,296; v2 main 1,316. Store counts = Qdrant counts. pypdf warns about missing fontTools (CFF fonts in one manual); v1 had the same, kept.
 - 2026-10-24: **The user's `.env` has `OCR_MODE=off`**, but the v2 main index was built with `missing`. A plain `make ingest` now would drop the scanned manual. Phase 3: pin the OCR mode used for each index (e.g. record it in `DocumentInfo` or the eval run params) so results are reproducible.
+- 2026-10-24: Eval-set reference text = raw text layer (pdfplumber, incl. tables as Markdown, before header/footer stripping and dot-leader collapsing), or the cached olmOCR output for pages without a text layer. Real corpus: 6 docs, 982 pages, 5 empty (the known blank pages); loading takes 56 s (pdfplumber), fine for validation, cache it if the eval runner needs it every run.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
