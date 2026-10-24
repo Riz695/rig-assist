@@ -16,7 +16,11 @@ from pathlib import Path
 from typing import Literal
 
 from rig_assist.ingestion.cache import PageCache, file_sha256
-from rig_assist.ingestion.cleaning import collapse_dot_leaders, strip_repeated_lines
+from rig_assist.ingestion.cleaning import (
+    collapse_dot_leaders,
+    html_tables_to_markdown,
+    strip_repeated_lines,
+)
 from rig_assist.ingestion.models import ParsedPage
 from rig_assist.ingestion.parsers import olmocr
 from rig_assist.ingestion.parsers.olmocr import (
@@ -161,7 +165,10 @@ def parse_document(
 
     if missing:
         logger.warning("%s: no text on pages %s", path.name, missing)
-    cleaned = [replace(page, text=collapse_dot_leaders(page.text)) for page in pages]
+    cleaned = [
+        replace(page, text=collapse_dot_leaders(html_tables_to_markdown(page.text)))
+        for page in pages
+    ]
     return ParseResult(
         pages=strip_repeated_lines(cleaned),
         missing_pages=missing,
