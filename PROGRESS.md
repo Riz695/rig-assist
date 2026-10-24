@@ -100,7 +100,7 @@ Open items to measure in Phase 3 (from Phase 2):
 
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
-| Metrics: `first_relevant_rank`, `hit_at_k`, `reciprocal_rank_at_k` on (doc_id, page); `refusal_metrics` (refused = positive class, score == threshold answered, nothing retrieved = refused, undefined precision/recall = None) | `f97d11e` test → FEAT feat | `Tasks/P3 - Retrieval and refusal metrics.md` |
+| Metrics: `first_relevant_rank`, `hit_at_k`, `reciprocal_rank_at_k` on (doc_id, page); `refusal_metrics` (refused = positive class, score == threshold answered, nothing retrieved = refused, undefined precision/recall = None) | `f97d11e` test → `ce7d392` feat | `Tasks/P3 - Retrieval and refusal metrics.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
