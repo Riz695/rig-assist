@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from conftest import FakeOcr, no_sleep
 
-from rig_assist.ingestion.cache import PageCache
+from rig_assist.ingestion.cache import PageCache, file_sha256
 from rig_assist.ingestion.parsers.olmocr import (
     OcrError,
     OcrFailedError,
@@ -265,3 +265,18 @@ def test_parsed_pages_have_dot_leaders_collapsed(make_pdf: MakePdf) -> None:
     result = parse_document(make_pdf([toc]), "d", ocr_mode="off")
     assert "1 INTRODUCTION … 7" in result.pages[0].text
     assert "...." not in result.pages[0].text
+
+
+def test_ocr_html_tables_become_markdown_but_the_cache_keeps_the_raw_output(
+    make_pdf: MakePdf, tmp_path: Path
+) -> None:
+    table = "<table><tr><th>Pump</th><th>Bar</th></tr><tr><td>P-101</td><td>350</td></tr></table>"
+    cache = PageCache(tmp_path / "parsed")
+    path = make_pdf([SCANNED_PAGE])
+
+    result = parse_document(path, "d", "missing", FakeOcr(text=table), cache=cache, sleep=no_sleep)
+
+    assert "| Pump | Bar |\n| --- | --- |\n| P-101 | 350 |" in result.pages[0].text
+    assert "<table>" not in result.pages[0].text
+    cached = cache.get(file_sha256(path), 1, "olmocr")
+    assert cached is not None and "<table>" in cached.text

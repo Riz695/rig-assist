@@ -1,6 +1,10 @@
 import pytest
 
-from rig_assist.ingestion.cleaning import collapse_dot_leaders, strip_repeated_lines
+from rig_assist.ingestion.cleaning import (
+    collapse_dot_leaders,
+    html_tables_to_markdown,
+    strip_repeated_lines,
+)
 from rig_assist.ingestion.models import ParsedPage
 
 WORDS = [
@@ -114,3 +118,75 @@ def test_collapse_dot_leaders_keeps_ordinary_text(text: str) -> None:
 def test_strip_repeated_lines_is_unaffected_by_leader_collapsing() -> None:
     pages = make_pages([["Contents", f"{w} section........{i}"] for i, w in enumerate(WORDS)])
     assert all("…" not in p.text for p in strip_repeated_lines(pages))
+
+
+# --- OCR tables: HTML -> Markdown ---------------------------------------------------
+# olmOCR writes tables as HTML, one row per line. In bge's tokenizer every tag costs
+# tokens, so blank forms overflowed its 512-token limit. Markdown keeps the content and
+# matches the pdfplumber parser's tables.
+
+
+def test_html_table_becomes_the_same_markdown_as_pdfplumber_tables() -> None:
+    html = (
+        "<table>\n<tr><th>Pump</th><th>Max pressure</th></tr>\n"
+        "<tr><td>P-101</td><td>350 bar</td></tr>\n</table>"
+    )
+    assert html_tables_to_markdown(html) == (
+        "| Pump | Max pressure |\n| --- | --- |\n| P-101 | 350 bar |"
+    )
+
+
+def test_text_around_tables_is_kept() -> None:
+    text = "Before\n<table><tr><td>a</td><td>b</td></tr></table>\nAfter"
+    assert html_tables_to_markdown(text) == "Before\n| a | b |\n| --- | --- |\nAfter"
+
+
+def test_several_tables_on_one_page() -> None:
+    text = "<table><tr><td>a</td></tr></table>\nmid\n<table><tr><td>b</td></tr></table>"
+    assert html_tables_to_markdown(text) == "| a |\n| --- |\nmid\n| b |\n| --- |"
+
+
+def test_inline_formatting_and_entities_inside_cells() -> None:
+    html = (
+        "<table><tr><td><b>Flow</b><br>rate</td><td>&gt; 20 m<sup>3</sup>/h</td></tr>"
+        "<tr><td><ul><li>one</li><li>two</li></ul></td><td>a | b</td></tr></table>"
+    )
+    assert html_tables_to_markdown(html) == (
+        "| Flow rate | > 20 m3/h |\n| --- | --- |\n| one two | a \\| b |"
+    )
+
+
+def test_unescaped_less_than_in_a_cell_is_kept_as_text() -> None:
+    html = "<table><tr><td>Wind</td><td><20 knots</td><td><finished goods</td></tr></table>"
+    assert html_tables_to_markdown(html) == (
+        "| Wind | <20 knots | <finished goods |\n| --- | --- | --- |"
+    )
+
+
+def test_colspan_pads_empty_cells_so_columns_stay_aligned() -> None:
+    html = (
+        '<table><tr><th colspan="2">Valve</th><th>State</th></tr>'
+        "<tr><td>V1</td><td>gate</td><td>open</td></tr></table>"
+    )
+    assert html_tables_to_markdown(html).splitlines()[0] == "| Valve |  | State |"
+
+
+def test_completely_empty_rows_are_dropped_but_numbered_blank_rows_stay() -> None:
+    html = (
+        "<table><tr><th>No.</th><th>Date</th></tr>"
+        "<tr><td></td><td> </td></tr>"
+        "<tr><td>1</td><td></td></tr></table>"
+    )
+    assert html_tables_to_markdown(html) == "| No. | Date |\n| --- | --- |\n| 1 |  |"
+
+
+def test_a_table_with_no_text_at_all_disappears() -> None:
+    assert html_tables_to_markdown("Form\n<table><tr><td></td></tr></table>") == "Form\n"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["No tables here.", "Pressure < 20 bar and > 5 bar", "| already | markdown |\n| --- | --- |"],
+)
+def test_text_without_html_tables_is_unchanged(text: str) -> None:
+    assert html_tables_to_markdown(text) == text
