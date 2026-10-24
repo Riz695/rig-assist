@@ -271,7 +271,7 @@ def test_report_compares_query_prefix_mode_by_mode() -> None:
     ]
     report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
     section = report.split("## Query prefix comparison")[1].split("## Refusal")[0]
-    assert "| mode | query prefix | Hit@5 | MRR@10 |" in section
+    assert "| config | query prefix | Hit@5 | MRR@10 |" in section
     assert "| dense | none | 2/2 (1.00) | 0.750 |" in section
     assert "| dense | bge | 2/2 (1.00) | 0.500 |" in section
 
@@ -299,3 +299,22 @@ def test_prefix_rows_stay_out_of_the_parser_and_reranker_comparisons() -> None:
     assert parser_section.count("| dense | pdfplumber |") == 1
     rerank_section = report.split("## Reranker comparison")[1].split("## ")[0]
     assert rerank_section.count("| small/model |") == 1
+
+
+def test_reranker_variants_stay_out_of_the_parser_comparison() -> None:
+    configs = [
+        EvalConfig("hybrid_rerank", ScriptedRetriever(DENSE.results), rerank_params("big/m", 20)),
+        EvalConfig(
+            "hybrid_rerank_small_c10",
+            ScriptedRetriever(DENSE.results),
+            rerank_params("small/m", 10),
+        ),
+        EvalConfig(
+            "olmocr_all_hybrid_rerank",
+            ScriptedRetriever(DENSE.results),
+            rerank_params("big/m", 20, parser="olmocr"),
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    parser_section = report.split("## Parser comparison")[1].split("## ")[0]
+    assert parser_section.count("| hybrid_rerank | pdfplumber |") == 1
