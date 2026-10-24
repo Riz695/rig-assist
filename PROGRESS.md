@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23. **All tasks done 2026-10-24; PR open, waiting for the user's review.**
+- **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23. **All tasks done 2026-10-24; [PR #4](https://github.com/Riz695/rig-assist/pull/4) open, waiting for the user's review.**
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24. **Next:** user reviews/merges the Phase 2 PR; then Phase 3 (evaluation).
