@@ -5,10 +5,10 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23.
+- **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23. **All tasks done 2026-10-24; PR open, waiting for the user's review.**
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
-- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). **Next:** end-of-phase checks + Phase 2 PR, then stop for review.
+- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24. **Next:** user reviews/merges the Phase 2 PR; then Phase 3 (evaluation).
 - **Blockers for Phase 1:**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
@@ -21,6 +21,13 @@ Running log of what's done, so any new session (or person) can pick up where the
     - Fallback in PLAN.md: official olmocr pipeline with vLLM on a rented GPU (estimate cost, ask the user first). olmOCR needs an NVIDIA GPU with >= 12 GB (README: tested on RTX 4090, L40S, A100, H100) and ~30 GB disk. vLLM serves an OpenAI-compatible `/v1`, so our client works unchanged (`OCR_BASE_URL=http://<pod>:8000/v1`, model `allenai/olmOCR-2-7B-1025-FP8`). Estimate on a RunPod RTX 4090 ($0.34/h community, $0.69/h secure, per-second billing, price snapshots mid-2026): ~1 h including setup → **about $0.35–0.70, under $2 with margin**. **2026-10-23: user chose this (option 2).** Steps in `docs/ocr-gpu.md` (RunPod RTX 4090, PyTorch template + web terminal, `pip install vllm==0.11.2`, `vllm serve allenai/olmOCR-2-7B-1025-FP8 --max-model-len 16384 --limit-mm-per-prompt '{"video": 0}'`, key via `VLLM_API_KEY`). Waiting for the user to deploy the pod. OCR is sequential (one page at a time): measure s/page first; add concurrency only if the full 982-page run would be slow.
     - 2026-10-23: user put the key in `.env` and also in `.env.example`; caught before any commit (not in tracked files or history), `.env.example` restored, pre-commit hook `no-secrets-in-env-example` added (`de94f5e`).
   - [x] `sbx`: **verified 2026-10-23** (user logged in; daemon healthy). Cloud sandboxes work for code/data in, `uv sync` + tests, `make ingest`, Docker + Qdrant inside, proxy-injected secrets, results out, stop/resume. Details and exact commands in `docs/cloud-jobs.md`.
+
+## Phase 2 acceptance (checked 2026-10-24)
+
+- ✅ All four modes work through the API: `docker compose up --build` (image + Qdrant by service name), `/search` with `bm25` 0.37 s, `dense` 0.58 s, `hybrid` 0.05 s, `hybrid_rerank` 17.8 s (first call, model load); 6 docs / 1,316 chunks; scanned-manual OCR pages retrieved; no errors in API logs.
+- ✅ RRF fusion tests with deterministic fake rankings (`tests/test_hybrid.py`); idempotent ingestion in both indexes (`tests/test_pipeline.py`, `tests/test_api_documents.py`, `tests/test_v1_baseline.py`); mode dispatch with fakes (`tests/test_search_service.py`).
+- ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
+- User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
 
 ## Phase 0: Scaffold
 
@@ -137,8 +144,8 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 
 ## Deferred / known gaps
 
-- **Phase 2:** `v1_baseline` needs v1's exact token-window chunker (`chunk_text` in v1's `src/rag/chunking.py`, 12 lines); not ported yet.
-- **Phase 2:** check embedding truncation: 500 cl100k tokens can exceed bge-small's 512 WordPiece limit. Measure on the corpus; lower the chunk size for dense retrieval if many chunks are cut.
+- **Phase 3:** 22 chunks (1.7%) still exceed bge-small's 512 tokens, all OCR HTML tables in the scanned manual: candidate fix = HTML→Markdown tables or smaller chunks, measured on the eval set.
+- **Phase 3:** reranker model choice (bge-base 10.7 s/query vs MiniLM-L6 2.4 s vs jina-tiny 2.0 s) and candidate count, by quality and latency.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
 - `make eval` is a placeholder that exit with an error until their phase.
