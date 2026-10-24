@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). In progress: see "Phase 3: start here" and the task table below. Eval set **frozen 2026-10-24** after the user's spot-check. Runner core done; next: CLI + MLflow 3.17.0 (`eval` dependency group, SQLite backend) + `make eval` + real run.
+- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). In progress: see "Phase 3: start here" and the task table below. Eval set **frozen 2026-10-24** after the user's spot-check. `make eval` works (first results committed). Next: parser comparison (olmOCR-all index), then the Phase 2 open items (reranker choice, query prefix, oversized chunks), then the default mode.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
@@ -96,7 +96,7 @@ Open items to measure in Phase 3 (from Phase 2):
 - BGE query prefix ("Represent this sentence for searching relevant passages: "): `FastEmbedEmbedder(query_prefix=...)` exists; measure with vs without.
 - 22 chunks (1.7%) still exceed bge-small's 512 tokens (OCR HTML tables in the scanned manual): measure whether HTML→Markdown tables or smaller chunks help.
 - Default `/search` mode is still `bm25`: choose the default from the results.
-- Record the OCR mode/parser settings each index was built with, so eval runs are reproducible (logged as MLflow params).
+- ~~Record the OCR mode/parser settings each index was built with~~: done, `index_chunks_by_parser` param on every run.
 
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
@@ -104,6 +104,7 @@ Open items to measure in Phase 3 (from Phase 2):
 | Eval-set validator: `EvalQuestion` (Pydantic, extra fields forbidden, answerable/unanswerable consistency), `validate_eval_set` (every error with line + id; duplicate ids; unknown doc_id; page out of range; quote on a stated page, ignoring case/spacing), `load_eval_set`, `load_reference_pages` (text layer, OCR cache for scans) | `ded28c7` test → `b8c7b25` feat | `Tasks/P3 - Eval-set validator.md` |
 | Eval set: `eval/questions.jsonl` (47 q: 42 answerable over all 6 manuals incl. 7 scanned-manual, 5 table, 5 unanswerable; 18/42 paraphrased), `eval/README.md`, `eval/CHANGELOG.md`; `wording` field added to the schema | `37bfac0` test → `26dcd72` feat; `dcdc6b8` feat | `Tasks/P3 - Building the eval set.md` |
 | Eval runner core: `evaluate` (rank of first relevant page in top 10, latency, best dense score in top 5), `summarize` (Hit@1/5, MRR@10, p50/p95 latency; subsets all/table/scanned/paraphrased/manual_wording), `refusal_cases`, `choose_threshold` (max refusal F1, lowest on ties) | `bb5c8b6` test → `d2a035b` feat | `Tasks/P3 - Retrieval eval runner.md` |
+| `make eval`: `run_retrieval.py` (6 configs, warm-up query, refusal @0.6 + tuned, Markdown report), `tracking.py` (`Tracker`, `MlflowTracker` SQLite, `NullTracker`), `eval/run_retrieval_eval.py`, `make mlflow-ui`, `MLFLOW_*` settings; first results `eval/results/retrieval.md` | `296f4fd` chore → `f0d66f4` test → `b08953e` feat → `8d8752a` results | `Tasks/P3 - make eval and MLflow tracking.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -155,6 +156,8 @@ Open items to measure in Phase 3 (from Phase 2):
 - 2026-10-24: Eval set: one `expected_doc_id` per question, so questions whose key fact appears in two manuals were dropped (checked by regex over all 982 pages); same fact on two pages of one manual → both pages listed. Added a required `wording: manual|paraphrased` field (beyond PLAN's schema) so BM25 vs dense can be compared on paraphrased questions. Paraphrased share is 43%, above PLAN's "roughly 30%".
 - 2026-10-24: MLflow: pin **3.17.0** (2026-10-07; 3.17.1/3.17.2 under two weeks old), in a separate `eval` dependency group (not in the API image). Backend **SQLite** (`sqlite:///…mlflow.db`, MLflow's default since 3.7); not the legacy file store, which is in maintenance mode and has a path-traversal CVE (CVE-2026-53995, ≤ 3.17.1, FileStore only).
 - 2026-10-24: "Not found" rule for the eval: refuse when no top-5 result has a dense (cosine) score ≥ threshold (v1: 0.6). Undefined for pure BM25 (no cosine). Tuned threshold = best refusal F1 on the eval set, lowest on ties; reported next to 0.6 and labelled as tuned on the test set.
+- 2026-10-24: **First retrieval eval** (commit `b08953e`, 9 min 30 s locally, 3.3 GB peak; no sandbox needed). Hit@5 / MRR@10 on 42 answerable: bm25 0.79/0.723, dense 0.90/0.766, hybrid 0.86/0.804, hybrid_rerank 0.90/0.834 (10 s/query), v1_baseline 0.76/0.651, v1_retrieval_on_v2_pages 0.88/0.795. Scanned manual: v1_baseline 0/7, all v2 configs 5–6/7. Paraphrased: bm25 Hit@5 0.61 vs dense 0.89. **v1's 0.6 cosine threshold refuses nothing useful**: all 5 unanswerable questions score 0.63–0.73 top cosine, the only score below 0.6 is answerable (0.576); tuned 0.667 gives P 0.60 / R 0.60 (optimistic). Cosine alone is a weak "not found" signal: revisit in Phase 4 (reranker score or LLM check). Misses common to most configs: q021 (CDS table), q037 (Marine floating objects): worth a failure analysis.
+- 2026-10-24: Index provenance per run = `index_chunks_by_parser` read from the index (e.g. `{"olmocr": 195, "pdfplumber": 1121}`), which closes the Phase 2 item "record the OCR mode each index was built with".
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -185,7 +188,6 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - **Phase 3:** reranker model choice (bge-base 10.7 s/query vs MiniLM-L6 2.4 s vs jina-tiny 2.0 s) and candidate count, by quality and latency.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
-- `make eval` is a placeholder that exit with an error until their phase.
 - OCR output has tables as HTML, which may be one long line: the chunker would cut it by tokens. Check real olmOCR output; convert HTML tables to Markdown if needed.
 - OCR: rotated pages not handled (olmOCR returns `is_rotation_valid`/`rotation_correction`; its pipeline re-renders rotated). Cache key doesn't include model/prompt version. Check both once real output exists.
 - A PDF deleted from `data/raw/` stays in the index (`IndexStore` has no `remove`). Add with the delete/upload API if needed.
