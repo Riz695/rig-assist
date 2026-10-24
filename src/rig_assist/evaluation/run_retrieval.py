@@ -17,7 +17,7 @@ import subprocess
 import sys
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import cast
@@ -44,8 +44,8 @@ from rig_assist.ingestion.variants import (
     variant_collection,
     variant_store_dir,
 )
-from rig_assist.retrieval.dense import make_dense_index
-from rig_assist.retrieval.embedder import BGE_QUERY_PREFIX
+from rig_assist.retrieval.dense import DenseIndex, make_dense_index
+from rig_assist.retrieval.embedder import BGE_QUERY_PREFIX, FastEmbedEmbedder
 from rig_assist.retrieval.models import Retriever
 from rig_assist.retrieval.rerank import CrossEncoder, FastEmbedCrossEncoder, RerankRetriever
 from rig_assist.retrieval.service import SEARCH_MODES, SearchIndex, SearchMode
@@ -96,6 +96,9 @@ class EvalConfig:
     name: str
     retriever: Retriever
     params: dict[str, str]
+    # Called once the config is done, so its models don't stay in memory for the rest of
+    # the run (they reload on next use). Without it, a full run held every model at once.
+    unload: Callable[[], None] | None = None
 
 
 @dataclass
@@ -160,6 +163,8 @@ def run_configs(
             config.name, result.params, _metrics(result), {"per_question.json": per_question}
         )
         out.append(result)
+        if config.unload is not None:
+            config.unload()
     return out
 
 
@@ -384,11 +389,25 @@ def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
     common = {"embedding_model": settings.embedding_model, "rrf_k": "60", "k_each": "20"}
     # One cross-encoder per model (loaded on first use), shared by its candidate counts.
     cross_encoders: dict[str, FastEmbedCrossEncoder] = {}
+    embedders: list[FastEmbedEmbedder] = []
 
     def cross_encoder_for(model: str) -> FastEmbedCrossEncoder:
         if model not in cross_encoders:
             cross_encoders[model] = FastEmbedCrossEncoder(model, cache_dir=str(settings.models_dir))
         return cross_encoders[model]
+
+    def dense_index(update: dict[str, str]) -> DenseIndex:
+        dense = make_dense_index(settings.model_copy(update=update))
+        if isinstance(dense.embedder, FastEmbedEmbedder):
+            embedders.append(dense.embedder)
+        return dense
+
+    def unload_models() -> None:
+        """After each config: models reload lazily, during the next config's warm-up."""
+        for reranker in cross_encoders.values():
+            reranker.unload()
+        for embedder in embedders:
+            embedder.unload()
 
     cross_encoder = cross_encoder_for(settings.reranker_model)
     # (config name prefix, chunk store, Qdrant collection, parser) for each v2 index
@@ -421,9 +440,7 @@ def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
             if not wanted:
                 continue
             update = {"qdrant_collection": collection, "embedding_query_prefix": query_prefix}
-            index = SearchIndex(
-                store, make_dense_index(settings.model_copy(update=update)), cross_encoder
-            )
+            index = SearchIndex(store, dense_index(update), cross_encoder)
             for base in wanted:
                 retriever, params = _v2_config(
                     base, index, settings.reranker_model, cross_encoder_for
@@ -439,11 +456,11 @@ def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
         collection = v1_collection(settings.qdrant_collection, config)
         store = IndexStore(v1_store_dir(settings.data_index_dir, config))
         update = {"qdrant_collection": collection, "embedding_query_prefix": ""}  # v1 used none
-        dense = make_dense_index(settings.model_copy(update=update))
+        dense = dense_index(update)
         params = {**common, **_index_params(store), "mode": "v1_hybrid", "bm25_idf": "okapi"}
         params |= {"qdrant_collection": collection, "query_prefix": ""}
         configs.append(EvalConfig(config, make_v1_retriever(store, dense), params))
-    return configs
+    return [replace(config, unload=unload_models) for config in configs]
 
 
 def _git_commit() -> str:

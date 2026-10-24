@@ -44,6 +44,10 @@ class FastEmbedCrossEncoder:
     def score(self, query: str, texts: list[str]) -> list[float]:
         return [float(s) for s in self._load().rerank(query, texts)]
 
+    def unload(self) -> None:
+        """Free the model's memory (bge-reranker-base: ~1.4 GB); the next call reloads it."""
+        self._model = None
+
 
 class RerankRetriever:
     """Take the first stage's top `candidates`, rescore them with a cross-encoder, keep k."""

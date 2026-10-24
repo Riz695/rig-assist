@@ -49,6 +49,10 @@ class FastEmbedEmbedder:
             self._dim = len(self.embed_passages(["dimension probe"])[0])
         return self._dim
 
+    def unload(self) -> None:
+        """Free the model's memory; the next call reloads it."""
+        self._model = None
+
     def embed_passages(self, texts: list[str]) -> list[list[float]]:
         return [vector.tolist() for vector in self._load().passage_embed(texts)]
 
