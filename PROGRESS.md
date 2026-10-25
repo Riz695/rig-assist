@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 4 (Single-agent RAG baseline), branch `phase-4-rag` (from `main` at `ad63769`). Teaching mode: last notes written `Tasks/P4 - Answer eval and not-found rules.md` (parser fix added to `Tasks/P4 - RAG pipeline.md`). Next: the LLM judge. Answer generation + "not found" comparison **done** (`eval/results/answers.md`); next: explanation of this task, then the LLM judge (`run_answer_eval.py` part 2) on a fresh pod.
+- **Current phase:** 4 (Single-agent RAG baseline), branch `phase-4-rag` (from `main` at `ad63769`), everything committed and pushed. Done: LLM layer, RAG pipeline, `POST /ask`, Gemini + `openai_compatible` providers, `make eval-answers` with results, citation parser fix. **Next: the LLM judge** (see "Phase 4: resume here" below), then the end of phase (lint, tests, PR). Teaching mode: last notes written `Tasks/P4 - Answer eval and not-found rules.md` (+ a correction callout in `Tasks/P4 - RAG pipeline.md`); the user has had the explanation of every finished task.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`). **Phase 3:** merged by the user on 2026-10-25 ([PR #5](https://github.com/Riz695/rig-assist/pull/5), merge commit `ad63769`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
@@ -40,7 +40,35 @@ Branch `phase-4-rag`. Order of work: LLM layer → RAG pipeline (prompt, citatio
 | `POST /ask`: `AskRequest` (question 1–1000 chars, `mode` default `hybrid_rerank`, `top_k` 1–20 default 5) → `AskResponse` (answer, found, refusal_reason, citations, usage incl. cost, latency, disclaimer); `create_app(llm=...)`; shared `searchable_retriever` (409s) used by `/search` too; LLM failure 502, Qdrant down 503 | `14f53b6` test → `7031c90` feat | `Tasks/P4 - Ask endpoint.md` |
 | Gemini provider: `LLM_PROVIDER=gemini` (+ `GEMINI_API_KEY`, `LLM_MODEL` required), `GEMINI_BASE_URL` (OpenAI-compatible endpoint, same `OpenAiLlm`), `LLM_MAX_RETRIES` (default 2) for every real provider, client timeout 60 → 120 s; user's `.env`: `gemini` + `gemini-3.5-flash` | `238b88c` test → `a8802c6` feat | `Tasks/P4 - Gemini provider.md` |
 | `make eval-answers`: `evaluation/answer_eval.py` (`AnswerRecord`, `AnswerCache` JSONL keyed by config, resumable `generate_answers`, `refusal_strategies` llm / reranker / llm_or_reranker, `safe_threshold`, `answer_stats`), `evaluation/run_answers.py` (served pipeline, 6 retries, report + MLflow `answer-eval`), `eval/run_answer_eval.py`; cache in `data/eval/` (gitignored: manual text). Fix: hidden thinking tokens counted as output, answer cap 1,024 → 4,096 | `9a6e90e` test → `ae555c3` feat; `4c8ee9a` test → `b39bd93` fix; `7858028` results | `Tasks/P4 - Answer eval and not-found rules.md` |
-| `openai_compatible` provider (`LLM_BASE_URL`, optional `LLM_API_KEY`) + `docs/llm-gpu.md` (RunPod, RTX 6000 Ada / L40S 48 GB, Qwen3.6-35B-A3B-FP8, vLLM 0.31.0) | `f306e05` test → `dc534c8` feat; `ced4498` docs | `Tasks/P4 - Answer eval and not-found rules.md` |
+| `openai_compatible` provider (`LLM_BASE_URL`, optional `LLM_API_KEY`) + `docs/llm-gpu.md` (RunPod, RTX 6000 Ada / L40S 48 GB, Qwen3.6-35B-A3B-FP8, vLLM 0.31.0; MCP route + manual route) | `f306e05` test → `dc534c8` feat; `ced4498` docs | `Tasks/P4 - Answer eval and not-found rules.md` |
+| Citation parser: a bare `p.N` reuses the document named before it in the same bracket (`[doc p.14, p.63]`); re-checked offline on the 47 saved answers, none flipped | `625bf3b` test → `1606a7d` fix | correction in `Tasks/P4 - RAG pipeline.md` |
+
+### Phase 4: resume here (written 2026-10-25 for the next session)
+
+**Phase 4 acceptance (PLAN.md) so far:** works end to end via Swagger ✅ (`/ask` real runs with the fake LLM, Gemini and Qwen on RunPod); tests use the fake LLM ✅; answer eval runs on this pipeline: generation + "not found" rules ✅ (`eval/results/answers.md`), **LLM judge (faithfulness + correctness) not done yet**.
+
+**Next task: the LLM judge** (PLAN.md Phase 3 "Answer eval": documented LLM-as-judge prompt kept in the repo, structured score + short reason, scoring/parsing tested with the fake LLM, results per pipeline, logged to MLflow; RAGAS optional, not planned). Proposed design (not started; tests first):
+- Judge prompt file in the repo (e.g. `src/rig_assist/evaluation/judge_prompt.py` or `eval/judge_prompt.md`). Per answered question, inputs: question, the answer, the retrieved context (`AnswerRecord.context`), the `reference_answer`. Output JSON: `faithfulness` (is every claim supported by the context?) and `correctness` (vs the reference), each a score on a small fixed scale plus a one-sentence reason.
+- Parser: strict JSON validation (Pydantic), **one retry on invalid output**, then record the item as unparseable (counted, not dropped silently). Test with `FakeLlm` scripted replies (valid, malformed, out-of-range, then-valid-on-retry).
+- Refused questions: unanswerable + refused needs no judging; answerable + refused (q022) scores as incorrect; unanswerable + answered (q043) should be judged (its answer is really a refusal in other words).
+- Reuse the saved answers in `data/eval/answers/answers.jsonl` (config `llm_model=Qwen/Qwen3.6-35B-A3B-FP8`): no new answer generation needed. Cache judge results the same way (JSONL keyed by judge config + prompt hash; resumable).
+- Report: add a judge section to `eval/results/answers.md` (or `eval/results/judge.md`), MLflow `answer-eval`.
+- **Self-preference risk:** Qwen judging its own answers. State it in the report; spot-check ~10 verdicts with the user (print question, answer, context excerpt, verdict) before trusting the numbers.
+- Judge LLM: same Qwen pod (below). ~42–47 calls, ~10 min of pod time ≈ $0.20–0.30.
+
+**Starting a pod again (RunPod MCP, plugin `runpod@runpod` 1.8.0 installed at user scope, signed in via OAuth):**
+1. Load the `runpod:runpod-mcp` skill, then read stock in **both** clouds: `list-gpu-types` with `include: [AVAILABILITY]`, `product: [POD]`, `cloud: SECURE` and `COMMUNITY`. On 2026-10-25 only Secure had a 48 GB Ada card (RTX 6000 Ada $0.99/h; L40S $1.09/h).
+2. Quote the hourly price to the user, then `create-pod` with the body in `docs/llm-gpu.md` ("Route used on 2026-10-25"): image `vllm/vllm-openai:v0.31.0`, entrypoint `["vllm","serve"]`, cmd `[Qwen/Qwen3.6-35B-A3B-FP8, --host, 0.0.0.0, --port, 8000, --max-model-len, 32768, --reasoning-parser, qwen3, --language-model-only]`, `env.VLLM_API_KEY` = a **new** key, disk 90, ports `["8000/http"]`, `gpu.minCudaVersion: "12.8"`.
+3. Generate the new key on the laptop straight into `.env` (`LLM_API_KEY=`), set `LLM_BASE_URL=https://<POD_ID>-8000.proxy.runpod.net/v1`; wait until `/v1/models` answers (~2–3 min); run the step-5 check in `docs/llm-gpu.md` (fingerprint, wrong key refused, model listed).
+4. Run, then **terminate the pod** (`delete-pod`, confirm with `list-pods` empty) and log time and cost in the credit section below (`list-pod-billing` posts with a delay).
+
+**State of the user's `.env` (2026-10-25):** `LLM_PROVIDER=openai_compatible`, `LLM_MODEL=Qwen/Qwen3.6-35B-A3B-FP8`, `LLM_BASE_URL` and `LLM_API_KEY` point at the **terminated** pod `9xyapq4l6t84qt` (dead key, harmless). A real `/ask` returns 502 until a new pod is up; set `LLM_PROVIDER=fake` to use the API locally meanwhile. `GEMINI_API_KEY` is still set (free tier, 20 requests/day/model).
+
+**Open items for the user:**
+- **Rotate the Gemini API key** (pasted into the chat on 2026-10-25): delete it in AI Studio, create a new one, put it in `.env` yourself.
+- RunPod balance: ~$7 before 2026-10-25, minus ≈ $0.26 for pod `9xyapq4l6t84qt` (confirm with `list-pod-billing` once posted).
+
+**End of Phase 4 (after the judge):** `make lint`, `make test` (556 passed at `acd380d`), push, open the PR `phase-4-rag` → `main` with a summary (incl. results, the model used for the eval vs Azure in prod, the RunPod/Gemini detours), stop for the user's review; never merge it yourself.
 
 Phase 3 findings Phase 4 depends on:
 - **Retrieval for `/ask`:** use the served default, `hybrid_rerank` (MiniLM-L6, 20 candidates): MRR@10 0.865, Hit@5 41/42, about 2 s per query on the laptop.
