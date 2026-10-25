@@ -29,6 +29,25 @@ Running log of what's done, so any new session (or person) can pick up where the
 - ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
 - User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
 
+## Starting Phase 4 (for the next session)
+
+1. Check that PR #5 is merged (`gh pr view 5`). If it's still open, stop: Phase 4 starts only after the user merges.
+2. `git switch main && git pull`, then `git switch -c phase-4-rag`.
+3. Follow PLAN.md "Phase 4: Single-agent RAG baseline" (tests first: fake LLM, citations only from retrieved chunks, "not found" path, usage tracking).
+
+Phase 3 findings Phase 4 depends on:
+- **Retrieval for `/ask`:** use the served default, `hybrid_rerank` (MiniLM-L6, 20 candidates): MRR@10 0.865, Hit@5 41/42, about 2 s per query on the laptop.
+- **"Not found" can't rely on cosine:** v1's 0.6 threshold refuses nothing. A threshold tuned on the eval set only reaches refusal precision 0.38–0.60. Candidates: the reranker score, an LLM "is this supported?" check, or both. Measure on the 5 unanswerable eval questions, and note they're also the test set.
+- **Default-mode `/search` never returns an empty list**, so the "not found" decision belongs in `/ask`.
+- **LLM client:** check whether Azure OpenAI's v1 endpoint lets the `openai` client serve both providers (current docs). `LLM_PROVIDER` defaults to `fake`; `LLM_MODEL` has no default.
+- **Answer eval** (`run_answer_eval.py`, LLM-as-judge) comes after `/ask` works. Estimate its API cost and ask the user before any run over $20.
+
+## Phase 3 acceptance (checked 2026-10-25)
+
+- ✅ `make eval` reproduces `eval/results/retrieval.md` (18 configs, 22.3 min, 4.23 GB peak; configs that already existed gave the same numbers in every rerun). Each config has its MLflow run id.
+- ✅ Results committed: per mode, per parser, table and scanned-manual subsets, v1 baselines, "not found" at 0.6 vs tuned.
+- ✅ `make lint` clean; `make test` 440 passed; CI green on PR #5.
+
 ## Phase 0: Scaffold
 
 Branch `phase-0-scaffold`. Acceptance: `make lint` + `make test` pass locally and in GitHub Actions ✅; `GET /health` returns `{"status": "ok", "version": ...}` ✅.
@@ -200,6 +219,8 @@ OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time i
 
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
 
+Phase 3: mlflow 3.17.0 (`eval` dependency group only; not in the API image or CI) · rerankers via fastembed's `TextCrossEncoder`: Xenova/ms-marco-MiniLM-L-6-v2 (served), BAAI/bge-reranker-base, jinaai/jina-reranker-v1-tiny-en (eval only)
+
 Phase 2: fastembed 0.9.0 (onnxruntime 1.31.0, tokenizers 0.23.3) · qdrant-client 1.19.1 · Qdrant server v1.19.2
 
 Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4 · pdfplumber 0.11.10 (pypdfium2 5.14.0, pillow 13.0.0) · openai 3.28.0 · OCR server: vLLM 0.11.2 + allenai/olmOCR-2-7B-1025-FP8
@@ -208,6 +229,8 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 
 ## Deferred / known gaps
 
+- q037 (Marine manual, floating objects) is missed by most configs. The failure analysis was skipped (user, 2026-10-25).
+- `hybrid_rerank` latency on Azure's 1–2 vCPUs is not measured yet (laptop: 2.1 s p50). Measure in Phase 8.
 - `olmocr_all` index: 2 chunks over 512 bge tokens (cds-guide p216 `____` fill-in lines, like the old dot leaders; one prose chunk at 514). Collapse underscore runs in cleaning if this index is ever served.
 - 2026-10-24: The OCR API key (`OCR_API_KEY` in `.env`) was printed into a Claude session transcript by mistake (not in any file or commit). User advised to rotate it if the RunPod pod/key is still live.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
