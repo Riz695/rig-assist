@@ -44,6 +44,7 @@ Order of work:
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
 | Training-pair builder (`training/pairs.py`): `eval_pages`, `trainable_chunks` (not on an eval page, ≥ 30 words), `split_of` (SHA-256 of `doc_id:page`, val 10%), `build_pairs` (unknown chunk → error, eval pages skipped again, normalised dedup, query for two chunks dropped, sorted then seeded shuffle). Real index: 42 eval pages / 65 chunks excluded, **1,160 trainable chunks**, 1,029 train / 131 val (val in all 6 manuals) | `2379469` test → `1598231` feat | `Tasks/P5 - Training-pair builder.md` |
+| Synthetic queries (`training/queries.py`): technician-style prompt (situation / keyword / specific fact, own words, no "the excerpt"), strict JSON `{"queries": [3]}` (StrictStr, ≤ 300 chars, extra fields forbidden), one retry naming the error then `unparseable`, `ThreadPoolExecutor` (`workers`), `QueryCache` keyed by model + prompt sha + count and reused only for the same chunk text (`text_sha256`); shared `llm/json_reply.parse_json_object` (judge refactored onto it); `make pairs` → `data/training/{queries.jsonl, pairs/train.jsonl, val.jsonl, stats.json}` (gitignored). **Real run** (Qwen3.6-35B on RunPod, thinking off): 1,160 chunks, 0 unparseable, 14 retried, 724,676 in / 70,817 out tokens, 2 min 34 s at 16 workers → **3,478 pairs (3,085 train / 393 val)**, 2 dropped as duplicate/ambiguous. Profile: median 13 words, median 60% of query words in its chunk, 0.8% mention "the document/table" (kept) | `cc73885` test → `1fbabd6` feat; `b8856ee` refactor; `234e57f` feat (`make pairs`) | `Tasks/P5 - Synthetic queries.md` |
 
 ## Phase 4: Single-agent RAG baseline
 
@@ -79,7 +80,7 @@ Branch `phase-4-rag`. Order of work: LLM layer → RAG pipeline (prompt, citatio
 3. Generate the new key on the laptop straight into `.env` (`LLM_API_KEY=`), set `LLM_BASE_URL=https://<POD_ID>-8000.proxy.runpod.net/v1`; wait until `/v1/models` answers (~2–3 min); run the step-5 check in `docs/llm-gpu.md` (fingerprint, wrong key refused, model listed).
 4. Run, then **terminate the pod** (`delete-pod`, confirm with `list-pods` empty) and log time and cost in the credit section below (`list-pod-billing` posts with a delay).
 
-**State of the user's `.env` (2026-10-25):** `LLM_PROVIDER=openai_compatible`, `LLM_MODEL=Qwen/Qwen3.6-35B-A3B-FP8`, `LLM_BASE_URL` and `LLM_API_KEY` point at the **terminated** pod `c60h6geksbdz63` (dead key, harmless). A real `/ask` returns 502 until a new pod is up; set `LLM_PROVIDER=fake` to use the API locally meanwhile. `GEMINI_API_KEY` is still set (free tier, 20 requests/day/model).
+**State of the user's `.env` (2026-10-25):** `LLM_PROVIDER=openai_compatible`, `LLM_MODEL=Qwen/Qwen3.6-35B-A3B-FP8`, `LLM_BASE_URL` and `LLM_API_KEY` point at the **terminated** pod `y37gbgkbudskv6` (dead key, harmless). A real `/ask` returns 502 until a new pod is up; set `LLM_PROVIDER=fake` to use the API locally meanwhile. `GEMINI_API_KEY` is still set (free tier, 20 requests/day/model).
 
 **Open items for the user:**
 - ~~Rotate the Gemini API key~~: done by the user on 2026-10-25.
@@ -280,6 +281,7 @@ Rules are in `PLAN.md` → "Compute". Use it for long CPU jobs; ask before any r
 | 2026-10-23 | `sbx` verification: 2 shell sandboxes (install, tests, ingest, Qdrant, secret test) | 2 CPU / 4 GiB | ~0.13 (8 min) | < $0.15 (est.; check Docker billing) | ~$249.85 (est.) |
 
 LLM GPU (RunPod): 2026-10-25, RTX 6000 Ada Secure $0.99/h, pod `9xyapq4l6t84qt`, ~15 min (10:21–10:36 UTC) ≈ $0.26 (estimate; check `list-pod-billing` once posted).
+LLM GPU (RunPod), synthetic queries: 2026-10-25, RTX 6000 Ada Secure $0.99/h (US-WA-1), pod `y37gbgkbudskv6` (thinking off), created 13:00:34 UTC, API up 13:08:19 (fresh host: compile + CUDA graphs), terminated ~13:11:30 (~11 min ≈ $0.18; estimate). `.env` now points at this terminated pod (dead key, fingerprint `8177fd09`).
 LLM GPU (RunPod), judge run: 2026-10-25, RTX 6000 Ada Secure $0.99/h (US-WA-1), pod `c60h6geksbdz63`, created 12:00:14 UTC, API up 12:04:34, terminated 12:12 UTC (~12 min ≈ $0.20; estimate, check `list-pod-billing` once posted). `.env` `LLM_BASE_URL`/`LLM_API_KEY` now point at this terminated pod (dead key, fingerprint `5c23da65`).
 
 OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time incl. setup and debugging. **Final (RunPod daily billing CSV, 2026-10-23): $1.563 total = GPU $1.551 + storage $0.012.** The user's balance dropped $2.13 ($10.00 → $7.87); the extra ~$0.57 isn't in the billing summary (pending hold or later charge; user to check if it doesn't return).
