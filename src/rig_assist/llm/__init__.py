@@ -36,6 +36,15 @@ def make_llm(settings: "Settings") -> LlmClient:
             base_url=GEMINI_BASE_URL,
             max_retries=settings.llm_max_retries,
         )
+    if settings.llm_provider == "openai_compatible":
+        assert settings.llm_base_url is not None
+        key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else "not-needed"
+        return OpenAiLlm(
+            model=settings.llm_model,
+            api_key=key,  # the SDK needs a value; a keyless server ignores it
+            base_url=settings.llm_base_url,
+            max_retries=settings.llm_max_retries,
+        )
     return FakeLlm()
 
 

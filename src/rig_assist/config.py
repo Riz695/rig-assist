@@ -55,12 +55,15 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     # "fake" is the default so the app and tests run offline and free.
-    llm_provider: Literal["fake", "openai", "azure", "gemini"] = "fake"
+    llm_provider: Literal["fake", "openai", "azure", "gemini", "openai_compatible"] = "fake"
     llm_model: str = ""
     openai_api_key: SecretStr | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None  # Google AI Studio key
+    # Any other OpenAI-compatible server, e.g. vLLM on a rented GPU (docs/llm-gpu.md).
+    llm_base_url: str | None = None
+    llm_api_key: SecretStr | None = None  # optional: a self-hosted server may not need one
     # The openai SDK retries 429 (rate limit), 5xx and connection errors with backoff.
     llm_max_retries: int = Field(default=2, ge=0)
     # USD per 1M tokens, for the cost estimate in responses. Unset = cost unknown (null).
@@ -94,6 +97,10 @@ class Settings(BaseSettings):
                 ("LLM_MODEL", self.llm_model),
             ],
             "gemini": [("GEMINI_API_KEY", self.gemini_api_key), ("LLM_MODEL", self.llm_model)],
+            "openai_compatible": [
+                ("LLM_BASE_URL", self.llm_base_url),
+                ("LLM_MODEL", self.llm_model),
+            ],
         }
         missing = [name for name, value in required[self.llm_provider] if not value]
         if missing:
