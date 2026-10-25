@@ -78,6 +78,13 @@ def test_fake_is_deterministic_across_instances() -> None:
     assert first == second
 
 
+def test_fake_records_the_token_limit_of_each_call() -> None:
+    llm = FakeLlm(replies=["a", "b"])
+    llm.complete(PROMPT)
+    llm.complete(PROMPT, max_tokens=4096)
+    assert llm.max_tokens == [1024, 4096]
+
+
 def test_fake_usage_counts_words_of_the_prompt_and_the_reply() -> None:
     response = FakeLlm(replies=["Every 14 days."]).complete(PROMPT)
     # "Answer from the manuals only." (5) + "How often is the BOP tested?" (6)
@@ -110,7 +117,9 @@ def test_cost_is_unknown_without_prices() -> None:
 # --- OpenAiLlm (real client, fake HTTP) ---------------------------------
 
 
-def completion(content: str | None, finish_reason: str = "stop") -> dict[str, Any]:
+def completion(
+    content: str | None, finish_reason: str = "stop", total_tokens: int = 876
+) -> dict[str, Any]:
     """A chat-completions response body, as OpenAI and Azure's v1 endpoint return it."""
     return {
         "id": "chatcmpl-1",
@@ -124,7 +133,7 @@ def completion(content: str | None, finish_reason: str = "stop") -> dict[str, An
                 "message": {"role": "assistant", "content": content},
             }
         ],
-        "usage": {"prompt_tokens": 812, "completion_tokens": 64, "total_tokens": 876},
+        "usage": {"prompt_tokens": 812, "completion_tokens": 64, "total_tokens": total_tokens},
     }
 
 
@@ -172,6 +181,13 @@ def test_openai_returns_text_usage_and_the_served_model() -> None:
         usage=Usage(input_tokens=812, output_tokens=64),
         model="gpt-test-2026-01-01",
     )
+
+
+def test_hidden_thinking_tokens_count_as_output() -> None:
+    # Gemini leaves its thinking out of completion_tokens and counts it only in the total
+    # (seen 2026-10-25: prompt 2092, completion 193, total 2893). It's billed as output.
+    llm, _ = make_openai(lambda _: httpx2.Response(200, json=completion("ok", total_tokens=1500)))
+    assert llm.complete(PROMPT).usage == Usage(input_tokens=812, output_tokens=1500 - 812)
 
 
 @pytest.mark.parametrize("finish_reason", ["length", "content_filter"])

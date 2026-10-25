@@ -5,6 +5,7 @@ import pytest
 from rig_assist.ingestion.models import Chunk
 from rig_assist.llm import FakeLlm, Prices, Usage
 from rig_assist.rag import (
+    MAX_ANSWER_TOKENS,
     NOT_FOUND,
     SNIPPET_CHARS,
     SYSTEM_PROMPT,
@@ -181,6 +182,14 @@ def test_long_snippets_are_cut_and_whitespace_collapsed() -> None:
     assert snippet.startswith("Line one line two x")
     assert len(snippet) == SNIPPET_CHARS
     assert snippet.endswith("…")
+
+
+def test_the_answer_cap_leaves_room_for_hidden_thinking() -> None:
+    # Gemini thought 600-900 tokens before a ~200-token answer; 1,024 cut answers off.
+    rag, llm, _ = pipeline(HITS, ["Yes [bop-manual p.12]."])
+    rag.ask("q")
+    assert llm.max_tokens == [MAX_ANSWER_TOKENS]
+    assert MAX_ANSWER_TOKENS >= 4096
 
 
 def test_top_k_controls_how_many_chunks_reach_the_prompt() -> None:
