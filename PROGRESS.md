@@ -100,7 +100,7 @@ Order of work (from `PLAN.md`):
 4. ~~Default `/search` mode, served reranker, query prefix~~: done (decisions, 2026-10-25).
 5. ~~Failure analysis of q021/q037~~: skipped (user, 2026-10-25); q021 is now found by the MiniLM reranker.
 6. ~~End of phase~~: done 2026-10-25, [PR #5](https://github.com/Riz695/rig-assist/pull/5).
-Teaching mode continues: after each task, explanation + Obsidian notes (`Tasks/P3 - ...`), then wait for "continue". Last notes written: `Tasks/P3 - OCR tables as Markdown.md`.
+Teaching mode continues: after each task, explanation + Obsidian notes (`Tasks/P3 - ...`), then wait for "continue". Last notes written: `Tasks/P3 - Choosing the served defaults.md`.
 
 Open items to measure in Phase 3 (from Phase 2):
 - ~~Reranker model and candidate count by quality **and** latency~~: measured 2026-10-24 (decisions).
