@@ -7,7 +7,8 @@ pass per (query, chunk) pair. So it only reranks the first stage's top `candidat
 
 Measured on this laptop's CPU (12 threads), 20 real chunks per query:
 `BAAI/bge-reranker-base` ~10.7 s, `Xenova/ms-marco-MiniLM-L-6-v2` ~2.4 s,
-`jinaai/jina-reranker-v1-tiny-en` ~2.0 s. Phase 3 measures what the extra time buys.
+`jinaai/jina-reranker-v1-tiny-en` ~2.0 s. On the eval set the big model bought nothing:
+MiniLM-L6 ranked best (MRR@10 0.865 vs 0.834), so it is the served default.
 """
 
 from dataclasses import replace
@@ -43,6 +44,10 @@ class FastEmbedCrossEncoder:
 
     def score(self, query: str, texts: list[str]) -> list[float]:
         return [float(s) for s in self._load().rerank(query, texts)]
+
+    def unload(self) -> None:
+        """Free the model's memory (bge-reranker-base: ~1.4 GB); the next call reloads it."""
+        self._model = None
 
 
 class RerankRetriever:

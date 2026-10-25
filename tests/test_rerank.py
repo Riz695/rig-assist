@@ -4,6 +4,7 @@ import pytest
 from conftest import FakeCrossEncoder
 
 from rig_assist.ingestion.models import Chunk
+from rig_assist.retrieval import rerank
 from rig_assist.retrieval.models import ScoredChunk
 from rig_assist.retrieval.rerank import FastEmbedCrossEncoder, RerankRetriever
 
@@ -96,6 +97,33 @@ def test_k_below_one_raises() -> None:
 def test_candidates_below_one_raises() -> None:
     with pytest.raises(ValueError):
         RerankRetriever(FakeFirstStage(FIRST_STAGE), FakeCrossEncoder(), candidates=0)
+
+
+class CountingTextCrossEncoder:
+    """Stands in for fastembed's TextCrossEncoder and counts how often it's loaded."""
+
+    loads = 0
+
+    def __init__(self, model_name: str, cache_dir: str | None = None) -> None:
+        type(self).loads += 1
+
+    def rerank(self, query: str, documents: list[str]) -> list[float]:
+        return [0.0] * len(documents)
+
+
+def test_unload_drops_the_model_and_the_next_score_reloads_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(rerank, "TextCrossEncoder", CountingTextCrossEncoder)
+    CountingTextCrossEncoder.loads = 0
+    cross_encoder = FastEmbedCrossEncoder("some/model")
+    cross_encoder.score("q", ["a"])
+    cross_encoder.score("q", ["b"])
+    assert CountingTextCrossEncoder.loads == 1  # loaded once, then reused
+    cross_encoder.unload()
+    cross_encoder.unload()  # unloading twice is harmless
+    assert cross_encoder.score("q", ["c"]) == [0.0]
+    assert CountingTextCrossEncoder.loads == 2
 
 
 # --- a real cross-encoder (small model, ~80 MB once; skipped when unavailable) ---------

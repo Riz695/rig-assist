@@ -1,0 +1,348 @@
+"""Eval orchestration: one tracked run per config, warm-up, refusal metrics, Markdown report.
+
+A fake tracker records what would go to MLflow, so these tests need neither MLflow nor
+real models.
+"""
+
+from typing import Any
+
+import pytest
+
+from rig_assist.config import Settings
+from rig_assist.evaluation.eval_set import EvalQuestion
+from rig_assist.evaluation.run_retrieval import (
+    ALL_CONFIGS,
+    PREFIX_CONFIGS,
+    RERANK_VARIANTS,
+    V1_THRESHOLD,
+    ConfigResult,
+    EvalConfig,
+    render_report,
+    run_configs,
+)
+from rig_assist.ingestion.models import Chunk
+from rig_assist.retrieval.embedder import BGE_QUERY_PREFIX
+from rig_assist.retrieval.models import ScoredChunk
+from rig_assist.retrieval.service import SEARCH_MODES
+
+
+def question(qid: str, page: int = 1, answerable: bool = True) -> EvalQuestion:
+    return EvalQuestion.model_validate(
+        {
+            "id": qid,
+            "question": f"question {qid}",
+            "expected_doc_id": "manual-a" if answerable else None,
+            "expected_pages": [page] if answerable else [],
+            "reference_answer": "answer",
+            "evidence_quote": "quote" if answerable else None,
+            "type": "factual" if answerable else "unanswerable",
+            "difficulty": "easy",
+            "wording": "manual",
+        }
+    )
+
+
+QUESTIONS = [question("q1", page=1), question("q2", page=2), question("u1", answerable=False)]
+
+
+def hit(page: int, dense: float | None) -> ScoredChunk:
+    chunk = Chunk(f"manual-a::p{page}::c0", "manual-a", "Manual A", page, None, "pdfplumber", "t")
+    return ScoredChunk(chunk, score=1.0, dense_score=dense)
+
+
+class ScriptedRetriever:
+    def __init__(self, results: dict[str, list[ScoredChunk]]) -> None:
+        self.results = results
+        self.queries: list[str] = []
+
+    def search(self, query: str, k: int) -> list[ScoredChunk]:
+        self.queries.append(query)
+        return self.results.get(query, [])[:k]
+
+
+# q1 found at rank 1, q2 at rank 2; the unanswerable question scores lowest.
+DENSE = ScriptedRetriever(
+    {
+        "question q1": [hit(1, 0.9)],
+        "question q2": [hit(5, 0.7), hit(2, 0.65)],
+        "question u1": [hit(3, 0.5)],
+    }
+)
+BM25 = ScriptedRetriever(
+    {"question q1": [hit(4, None), hit(1, None)], "question q2": [hit(9, None), hit(2, None)]}
+)
+
+
+class FakeTracker:
+    def __init__(self) -> None:
+        self.runs: list[dict[str, Any]] = []
+
+    def log_run(
+        self,
+        name: str,
+        params: dict[str, str],
+        metrics: dict[str, float],
+        artifacts: dict[str, str],
+    ) -> None:
+        self.runs.append(
+            {"name": name, "params": params, "metrics": metrics, "artifacts": artifacts}
+        )
+
+
+def run(tracker: FakeTracker | None = None) -> list[ConfigResult]:
+    configs = [
+        EvalConfig("dense", ScriptedRetriever(DENSE.results), {"mode": "dense"}),
+        EvalConfig("bm25", ScriptedRetriever(BM25.results), {"mode": "bm25"}),
+    ]
+    return run_configs(
+        configs, QUESTIONS, tracker or FakeTracker(), common_params={"eval_set_sha256": "abc"}
+    )
+
+
+def test_one_tracked_run_per_config_with_common_and_own_params() -> None:
+    tracker = FakeTracker()
+    run(tracker)
+    assert [r["name"] for r in tracker.runs] == ["dense", "bm25"]
+    assert tracker.runs[0]["params"] == {"eval_set_sha256": "abc", "mode": "dense"}
+
+
+def test_metrics_are_logged_per_subset() -> None:
+    tracker = FakeTracker()
+    run(tracker)
+    metrics = tracker.runs[0]["metrics"]
+    assert metrics["all/hit_at_1"] == pytest.approx(0.5)
+    assert metrics["all/hit_at_5"] == 1.0
+    assert metrics["all/mrr_at_10"] == pytest.approx(0.75)
+    assert metrics["all/n"] == 2
+    assert "all/p95_latency_s" in metrics
+
+
+def test_per_question_results_are_logged_as_an_artifact() -> None:
+    tracker = FakeTracker()
+    run(tracker)
+    artifact = tracker.runs[0]["artifacts"]["per_question.json"]
+    assert '"q2"' in artifact and '"rank": 2' in artifact
+
+
+def test_a_warm_up_query_runs_first_and_is_not_scored() -> None:
+    retriever = ScriptedRetriever(DENSE.results)
+    run_configs([EvalConfig("dense", retriever, {})], QUESTIONS, FakeTracker())
+    assert len(retriever.queries) == len(QUESTIONS) + 1
+    assert retriever.queries[0] not in {q.question for q in QUESTIONS}
+
+
+def test_each_config_is_unloaded_after_its_run_before_the_next_starts() -> None:
+    events: list[str] = []
+
+    class RecordingRetriever(ScriptedRetriever):
+        def __init__(self, name: str) -> None:
+            super().__init__(DENSE.results)
+            self.name = name
+
+        def search(self, query: str, k: int) -> list[ScoredChunk]:
+            events.append(f"search {self.name}")
+            return super().search(query, k)
+
+    configs = [
+        EvalConfig("a", RecordingRetriever("a"), {}, unload=lambda: events.append("unload a")),
+        EvalConfig("b", RecordingRetriever("b"), {}),  # nothing to unload
+        EvalConfig("c", RecordingRetriever("c"), {}, unload=lambda: events.append("unload c")),
+    ]
+    run_configs(configs, QUESTIONS, FakeTracker())
+    searches = len(QUESTIONS) + 1  # warm-up + one per question
+    assert events == (
+        ["search a"] * searches
+        + ["unload a"]
+        + ["search b"] * searches
+        + ["search c"] * searches
+        + ["unload c"]
+    )
+
+
+def test_refusal_at_v1_threshold_and_at_the_tuned_threshold() -> None:
+    [dense, _] = run()
+    assert dense.refusal_v1 is not None and dense.refusal_tuned is not None
+    # At 0.6 only u1 (0.5) is refused: P = 1, R = 1.
+    assert (dense.refusal_v1.precision, dense.refusal_v1.recall) == (1.0, 1.0)
+    assert V1_THRESHOLD == 0.6
+    assert 0.5 < dense.tuned_threshold <= 0.65  # type: ignore[operator]
+
+
+def test_refusal_is_skipped_for_a_retriever_without_dense_scores() -> None:
+    tracker = FakeTracker()
+    [_, bm25] = run(tracker)
+    assert bm25.refusal_v1 is None and bm25.tuned_threshold is None
+    assert not any(key.startswith("refusal") for key in tracker.runs[1]["metrics"])
+
+
+def test_report_has_one_row_per_config_with_counts() -> None:
+    report = render_report(run(), title="Retrieval eval")
+    assert "| dense | 1/2 (0.50) | 2/2 (1.00) | 0.750 |" in report
+    assert "| bm25 | 0/2 (0.00) | 2/2 (1.00) | 0.500 |" in report
+
+
+def test_report_shows_refusal_only_where_it_applies() -> None:
+    report = render_report(run(), title="Retrieval eval")
+    refusal_section = report.split("## Refusal")[1]
+    assert "| dense |" in refusal_section
+    assert "| bm25 |" not in refusal_section
+
+
+def test_report_compares_parsers_mode_by_mode() -> None:
+    configs = [
+        EvalConfig(
+            "dense", ScriptedRetriever(DENSE.results), {"mode": "dense", "parser": "pdfplumber"}
+        ),
+        EvalConfig(
+            "olmocr_all_dense",
+            ScriptedRetriever(BM25.results),
+            {"mode": "dense", "parser": "olmocr"},
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    section = report.split("## Parser comparison")[1].split("## Refusal")[0]
+    assert "| dense | pdfplumber | 2/2 (1.00) | 0.750 | n/a | n/a | n/a | n/a |" in section
+    assert "| dense | olmocr | 2/2 (1.00) | 0.500 | n/a | n/a | n/a | n/a |" in section
+
+
+def test_no_parser_comparison_without_both_parsers() -> None:
+    assert "## Parser comparison" not in render_report(run(), title="Retrieval eval")
+
+
+def rerank_params(model: str, candidates: int, parser: str = "pdfplumber") -> dict[str, str]:
+    return {
+        "mode": "hybrid_rerank",
+        "parser": parser,
+        "reranker_model": model,
+        "rerank_candidates": str(candidates),
+    }
+
+
+def test_report_compares_rerankers_against_plain_hybrid() -> None:
+    configs = [
+        EvalConfig(
+            "hybrid", ScriptedRetriever(BM25.results), {"mode": "hybrid", "parser": "pdfplumber"}
+        ),
+        EvalConfig(
+            "hybrid_rerank", ScriptedRetriever(DENSE.results), rerank_params("big/model", 20)
+        ),
+        EvalConfig(
+            "hybrid_rerank_small_c10",
+            ScriptedRetriever(BM25.results),
+            rerank_params("small/model", 10),
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    section = report.split("## Reranker comparison")[1].split("## Refusal")[0]
+    rows = [line for line in section.splitlines() if line.startswith("| ") and "---" not in line]
+    assert [row.split(" | ")[:2] for row in rows[1:]] == [
+        ["| none (hybrid)", "–"],
+        ["| big/model", "20"],
+        ["| small/model", "10"],
+    ]
+    assert "| big/model | 20 | 1/2 (0.50) | 2/2 (1.00) | 0.750 | 0.000 s | 0.000 s |" in section
+
+
+def test_reranker_comparison_leaves_out_other_parsers() -> None:
+    configs = [
+        EvalConfig("a", ScriptedRetriever(DENSE.results), rerank_params("big/model", 20)),
+        EvalConfig("b", ScriptedRetriever(DENSE.results), rerank_params("small/model", 10)),
+        EvalConfig(
+            "olmocr_all_hybrid_rerank",
+            ScriptedRetriever(DENSE.results),
+            rerank_params("other/model", 20, parser="olmocr"),
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    section = report.split("## Reranker comparison")[1].split("## Refusal")[0]
+    assert "big/model" in section and "other/model" not in section
+
+
+def test_no_reranker_comparison_with_a_single_reranker() -> None:
+    configs = [EvalConfig("a", ScriptedRetriever(DENSE.results), rerank_params("big/model", 20))]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    assert "## Reranker comparison" not in report
+
+
+def test_reranker_variants_are_distinct_runnable_configs() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    default = (settings.reranker_model, 20)  # what the plain hybrid_rerank config runs
+    variants = list(RERANK_VARIANTS.values())
+    assert len(set(variants)) == len(variants)
+    assert default not in variants
+    assert {candidates for _, candidates in variants} == {10, 20}
+    for name in RERANK_VARIANTS:
+        assert name.startswith("hybrid_rerank_") and name in ALL_CONFIGS
+
+
+def prefixed(params: dict[str, str]) -> dict[str, str]:
+    return {**params, "query_prefix": BGE_QUERY_PREFIX}
+
+
+def test_bge_query_prefix_is_baais_retrieval_instruction() -> None:
+    assert BGE_QUERY_PREFIX == "Represent this sentence for searching relevant passages: "
+
+
+def test_prefix_configs_are_named_after_a_runnable_base_config() -> None:
+    assert PREFIX_CONFIGS
+    for name in PREFIX_CONFIGS:
+        base = name.removesuffix("_qprefix")
+        assert name != base and name in ALL_CONFIGS
+        assert base in SEARCH_MODES or base in RERANK_VARIANTS
+
+
+def test_report_compares_query_prefix_mode_by_mode() -> None:
+    plain = {"mode": "dense", "parser": "pdfplumber", "query_prefix": ""}
+    configs = [
+        EvalConfig("dense", ScriptedRetriever(DENSE.results), plain),
+        EvalConfig("dense_qprefix", ScriptedRetriever(BM25.results), prefixed(plain)),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    section = report.split("## Query prefix comparison")[1].split("## Refusal")[0]
+    assert "| config | query prefix | Hit@5 | MRR@10 |" in section
+    assert "| dense | none | 2/2 (1.00) | 0.750 |" in section
+    assert "| dense | bge | 2/2 (1.00) | 0.500 |" in section
+
+
+def test_prefix_rows_stay_out_of_the_parser_and_reranker_comparisons() -> None:
+    dense = {"mode": "dense", "parser": "pdfplumber", "query_prefix": ""}
+    configs = [
+        EvalConfig("dense", ScriptedRetriever(DENSE.results), dense),
+        EvalConfig("dense_qprefix", ScriptedRetriever(DENSE.results), prefixed(dense)),
+        EvalConfig(
+            "olmocr_all_dense",
+            ScriptedRetriever(DENSE.results),
+            {**dense, "parser": "olmocr"},
+        ),
+        EvalConfig("r1", ScriptedRetriever(DENSE.results), rerank_params("big/model", 20)),
+        EvalConfig("r2", ScriptedRetriever(DENSE.results), rerank_params("small/model", 20)),
+        EvalConfig(
+            "r2_qprefix",
+            ScriptedRetriever(DENSE.results),
+            prefixed(rerank_params("small/model", 20)),
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    parser_section = report.split("## Parser comparison")[1].split("## ")[0]
+    assert parser_section.count("| dense | pdfplumber |") == 1
+    rerank_section = report.split("## Reranker comparison")[1].split("## ")[0]
+    assert rerank_section.count("| small/model |") == 1
+
+
+def test_reranker_variants_stay_out_of_the_parser_comparison() -> None:
+    configs = [
+        EvalConfig("hybrid_rerank", ScriptedRetriever(DENSE.results), rerank_params("big/m", 20)),
+        EvalConfig(
+            "hybrid_rerank_small_c10",
+            ScriptedRetriever(DENSE.results),
+            rerank_params("small/m", 10),
+        ),
+        EvalConfig(
+            "olmocr_all_hybrid_rerank",
+            ScriptedRetriever(DENSE.results),
+            rerank_params("big/m", 20, parser="olmocr"),
+        ),
+    ]
+    report = render_report(run_configs(configs, QUESTIONS, FakeTracker()), title="Retrieval eval")
+    parser_section = report.split("## Parser comparison")[1].split("## ")[0]
+    assert parser_section.count("| hybrid_rerank | pdfplumber |") == 1

@@ -1,13 +1,17 @@
 """Dense retrieval: Qdrant in-memory mode (no server) + a fake embedder (no model)."""
 
 import uuid
+from collections.abc import Iterator
 
+import numpy as np
 import pytest
 from conftest import KeywordEmbedder
 from qdrant_client import QdrantClient
 
+from rig_assist.config import Settings
 from rig_assist.ingestion.models import Chunk
-from rig_assist.retrieval.dense import DenseIndex, point_id
+from rig_assist.retrieval import embedder as embedder_module
+from rig_assist.retrieval.dense import DenseIndex, make_dense_index, point_id
 from rig_assist.retrieval.embedder import FastEmbedEmbedder
 
 
@@ -104,11 +108,45 @@ def test_query_prefix_is_applied_to_queries_only() -> None:
     assert embedder.queries == ["pump"]  # the embedder adds the prefix itself
 
 
+def test_make_dense_index_passes_the_query_prefix_setting() -> None:
+    settings = Settings(_env_file=None, embedding_query_prefix="Represent this: ")  # type: ignore[call-arg]
+    embedder = make_dense_index(settings).embedder  # no model or server is touched yet
+    assert isinstance(embedder, FastEmbedEmbedder)
+    assert embedder.query_prefix == "Represent this: "
+
+
 def test_collection_is_created_with_the_embedder_dimension() -> None:
     client = QdrantClient(":memory:")
     DenseIndex(client, "dims", KeywordEmbedder()).upsert_document("drilling-manual", DRILLING)
     info = client.get_collection("dims")
     assert info.config.params.vectors.size == KeywordEmbedder().dim  # type: ignore[union-attr]
+
+
+class CountingTextEmbedding:
+    """Stands in for fastembed's TextEmbedding and counts how often it's loaded."""
+
+    loads = 0
+
+    def __init__(self, model_name: str, cache_dir: str | None = None) -> None:
+        type(self).loads += 1
+
+    def query_embed(self, text: str) -> Iterator[np.ndarray]:
+        yield np.zeros(3)
+
+
+def test_unload_drops_the_model_and_the_next_query_reloads_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(embedder_module, "TextEmbedding", CountingTextEmbedding)
+    CountingTextEmbedding.loads = 0
+    embedder = FastEmbedEmbedder("some/model")
+    embedder.embed_query("a")
+    embedder.embed_query("b")
+    assert CountingTextEmbedding.loads == 1
+    embedder.unload()
+    embedder.unload()  # unloading twice is harmless
+    assert embedder.embed_query("c") == [0.0, 0.0, 0.0]
+    assert CountingTextEmbedding.loads == 2
 
 
 # --- the real model (downloads ~67 MB once; skipped when that's impossible) -----

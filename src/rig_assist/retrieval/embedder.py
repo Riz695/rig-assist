@@ -8,6 +8,9 @@ from typing import Protocol
 
 from fastembed import TextEmbedding
 
+# BAAI's suggested instruction for short queries that search longer passages (bge v1.5).
+BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
 
 class Embedder(Protocol):
     @property
@@ -45,6 +48,10 @@ class FastEmbedEmbedder:
         if self._dim is None:
             self._dim = len(self.embed_passages(["dimension probe"])[0])
         return self._dim
+
+    def unload(self) -> None:
+        """Free the model's memory; the next call reloads it."""
+        self._model = None
 
     def embed_passages(self, texts: list[str]) -> list[list[float]]:
         return [vector.tolist() for vector in self._load().passage_embed(texts)]

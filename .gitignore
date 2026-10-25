@@ -25,6 +25,7 @@ data/raw/*
 !data/raw/.gitkeep
 data/index/
 data/parsed/
+data/mlflow/
 *.sqlite
 *.db
 

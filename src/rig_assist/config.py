@@ -38,10 +38,18 @@ class Settings(BaseSettings):
 
     # --- Retrieval ---
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    reranker_model: str = "BAAI/bge-reranker-base"
+    # Prepended to search queries only (not chunks). "" = none, as v1 and fastembed.
+    embedding_query_prefix: str = ""
+    # Best on the eval set (eval/results/retrieval.md) and ~4x faster on CPU than
+    # BAAI/bge-reranker-base (~2 s vs ~10 s per query for 20 candidates).
+    reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: SecretStr | None = None
     qdrant_collection: str = "rig_assist_chunks"
+
+    # --- Experiment tracking (eval runs only; MLflow is in the `eval` dependency group) ---
+    mlflow_tracking_uri: str = "sqlite:///data/mlflow/mlflow.db"
+    mlflow_artifact_dir: Path = Path("data/mlflow/artifacts")
 
     # --- LLM ---
     # "fake" is the default so the app and tests run offline and free.

@@ -5,11 +5,11 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 2 (Hybrid retrieval + rerank), branch `phase-2-hybrid`, started 2026-10-23. **All tasks done 2026-10-24; [PR #4](https://github.com/Riz695/rig-assist/pull/4) open, waiting for the user's review.**
-- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`).
+- **Current phase:** 3 (Evaluation), branch `phase-3-eval`. **Done; [PR #5](https://github.com/Riz695/rig-assist/pull/5) opened 2026-10-25, waiting for the user's review (never merge it yourself).** End-of-phase checks passed: `make lint` clean, `make test` 440 passed, CI green (lint, tests 3.11/3.12, docker). Served defaults: `/search` = `hybrid_rerank` with MiniLM-L6. Next after merge: Phase 4 (single-agent RAG baseline, `/ask`), then the answer eval.
+- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
-- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24. **Next:** user reviews/merges the Phase 2 PR; then Phase 3 (evaluation).
-- **Blockers for Phase 1:**
+- Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
+- **Blockers for Phase 1 (all resolved, kept for history):**
   - [x] Docker installed: it's **Docker Desktop** 29.9.2 (context `desktop-linux`), compose v5.6.0; `hello-world` works. Fine for this project
   - [x] Manuals (PDFs) placed in `data/raw/`: 6 files, 982 pages; `MarineOffshoreLogOpsManual.pdf` (146 pages) has no text layer
   - [x] v1 repo: https://github.com/Riz695/offshore-drilling-rag (linked in `PLAN.md` via PR #2)
@@ -28,6 +28,25 @@ Running log of what's done, so any new session (or person) can pick up where the
 - ✅ RRF fusion tests with deterministic fake rankings (`tests/test_hybrid.py`); idempotent ingestion in both indexes (`tests/test_pipeline.py`, `tests/test_api_documents.py`, `tests/test_v1_baseline.py`); mode dispatch with fakes (`tests/test_search_service.py`).
 - ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
 - User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
+
+## Starting Phase 4 (for the next session)
+
+1. Check that PR #5 is merged (`gh pr view 5`). If it's still open, stop: Phase 4 starts only after the user merges.
+2. `git switch main && git pull`, then `git switch -c phase-4-rag`.
+3. Follow PLAN.md "Phase 4: Single-agent RAG baseline" (tests first: fake LLM, citations only from retrieved chunks, "not found" path, usage tracking).
+
+Phase 3 findings Phase 4 depends on:
+- **Retrieval for `/ask`:** use the served default, `hybrid_rerank` (MiniLM-L6, 20 candidates): MRR@10 0.865, Hit@5 41/42, about 2 s per query on the laptop.
+- **"Not found" can't rely on cosine:** v1's 0.6 threshold refuses nothing. A threshold tuned on the eval set only reaches refusal precision 0.38–0.60. Candidates: the reranker score, an LLM "is this supported?" check, or both. Measure on the 5 unanswerable eval questions, and note they're also the test set.
+- **Default-mode `/search` never returns an empty list**, so the "not found" decision belongs in `/ask`.
+- **LLM client:** check whether Azure OpenAI's v1 endpoint lets the `openai` client serve both providers (current docs). `LLM_PROVIDER` defaults to `fake`; `LLM_MODEL` has no default.
+- **Answer eval** (`run_answer_eval.py`, LLM-as-judge) comes after `/ask` works. Estimate its API cost and ask the user before any run over $20.
+
+## Phase 3 acceptance (checked 2026-10-25)
+
+- ✅ `make eval` reproduces `eval/results/retrieval.md` (18 configs, 22.3 min, 4.23 GB peak; configs that already existed gave the same numbers in every rerun). Each config has its MLflow run id.
+- ✅ Results committed: per mode, per parser, table and scanned-manual subsets, v1 baselines, "not found" at 0.6 vs tuned.
+- ✅ `make lint` clean; `make test` 440 passed; CI green on PR #5.
 
 ## Phase 0: Scaffold
 
@@ -71,6 +90,57 @@ Branch `phase-2-hybrid`.
 | Cross-encoder reranker: `CrossEncoder` protocol, `FastEmbedCrossEncoder`, `RerankRetriever` (top-20 candidates); CPU speed measured | `2826762` test → `06f8733` feat | `Tasks/P2 - Cross-encoder reranker.md` |
 | `/search` modes (`SearchIndex.retriever(mode)`), uploads write Qdrant, 409 (dense index empty) / 503 (Qdrant down), `dense_score` in results | `20f0b90` test → `f7424ea` feat | `Tasks/P2 - Search modes in the API.md` |
 | v1 baseline: `v1_baseline` (v1 parser) + `v1_retrieval_on_v2_pages`, own stores/collections, Okapi IDF option, `make ingest-v1`; pypdf 6.20.0 | `076e58b` chore → `b7a5bcf` test → `0ff91b7` feat | `Tasks/P2 - v1 baseline configs.md` |
+
+## Phase 3: Evaluation
+
+Branch `phase-3-eval`. The most important phase for the portfolio (see `PLAN.md` → Phase 3).
+
+### Phase 3: start here
+
+State of the data on 2026-10-24 (all local, gitignored; rebuild commands in brackets):
+- v2 main index: 6 docs, 1,302 chunks (rebuilt 2026-10-24 with OCR tables as Markdown) in `data/index/` + Qdrant `rig_assist_chunks` (`make ingest`, ~5 min).
+- olmOCR-all variant (parser comparison): 1,220 chunks in `data/index/variants/olmocr_all/` + Qdrant `rig_assist_chunks__olmocr_all` (`make ingest-olmocr`, ~5 min, OCR cache only).
+- MLflow runs: `data/mlflow/mlflow.db` + `data/mlflow/artifacts/` (`make mlflow-ui`); experiment `retrieval-eval`, latest full run at commit `2c8b51c` (18 configs, 22.3 min, 4.23 GB peak).
+- v1 baselines: `v1_baseline` 1,142 chunks, `v1_retrieval_on_v2_pages` 1,296, in `data/index/baselines/<config>/` + Qdrant `rig_assist_chunks__<config>` (`make ingest-v1`, ~10 min).
+- OCR cache: all 982 pages in `data/parsed/` (olmOCR 2). `.env` now has `OCR_MODE=missing` (user, 2026-10-24), matching how both v2 indexes were built; cached pages cost nothing.
+- Models cached in `data/models/`: bge-small, MiniLM-L6 (served reranker), bge-reranker-base (1 GB, eval only), jina-tiny.
+- Qdrant runs in Docker (`docker compose up -d qdrant`; Docker Desktop must be running).
+
+Order of work (from `PLAN.md`):
+1. **Tests first:** metric functions (Hit@k, MRR@k with edge cases), eval-set validator (missing fields, unknown doc_id, page out of range, duplicate IDs, `evidence_quote` must appear on the stated page), refusal metrics (precision/recall of "not found" at a threshold).
+2. **Build `eval/questions.jsonl`** (40–60 entries) by reading the manuals directly: PDF page numbers (1-based, not printed numbers), paraphrased questions (~30% different vocabulary), spread over all 6 manuals incl. the scanned one and table pages, mixed types, ~10% unanswerable. Evidence quotes from the text layer, or from the OCR cache for scanned pages. Write `eval/README.md`. **Print 10 random questions with evidence and stop for the user's spot-check before using the set. Then freeze it** (changes only with a reason in `eval/CHANGELOG.md`).
+3. **Check MLflow's current docs, pin it**, then `run_retrieval_eval.py`: Hit@1, Hit@5, MRR@10, p50/p95 latency for `bm25`, `dense`, `hybrid`, `hybrid_rerank`, `v1_baseline`, `v1_retrieval_on_v2_pages`; per parser and for table / scanned-manual questions; "not found" threshold: v1's fixed 0.6 vs one chosen on the set (note the tuning-on-test-set risk). Log runs to MLflow; commit Markdown tables to `eval/results/`; make `make eval` work. Use a Docker Cloud Sandbox if the sweep is slow (estimate; ask above $20).
+4. Answer eval (`run_answer_eval.py`) comes **after Phase 4**.
+
+**Done so far (2026-10-24):** steps 1–3, the parser comparison and the reranker comparison (task table below). **Resume here (next session):**
+1. ~~Reranker choice~~: done (see decisions, 2026-10-24). Switching the served `RERANKER_MODEL` default is folded into item 4.
+2. ~~BGE query prefix with vs without~~: done (decisions, 2026-10-24). `EMBEDDING_QUERY_PREFIX` setting exists (default empty); whether to turn it on is folded into item 4.
+3. ~~22 oversized chunks~~: done (decisions, 2026-10-24): OCR HTML tables → Markdown in cleaning.
+4. ~~Default `/search` mode, served reranker, query prefix~~: done (decisions, 2026-10-25).
+5. ~~Failure analysis of q021/q037~~: skipped (user, 2026-10-25); q021 is now found by the MiniLM reranker.
+6. ~~End of phase~~: done 2026-10-25, [PR #5](https://github.com/Riz695/rig-assist/pull/5).
+Teaching mode continues: after each task, explanation + Obsidian notes (`Tasks/P3 - ...`), then wait for "continue". Last notes written: `Tasks/P3 - Choosing the served defaults.md`.
+
+Open items to measure in Phase 3 (from Phase 2):
+- ~~Reranker model and candidate count by quality **and** latency~~: measured 2026-10-24 (decisions).
+- ~~BGE query prefix with vs without~~: measured 2026-10-24 (decisions).
+- ~~22 chunks over bge-small's 512 tokens~~: fixed 2026-10-24 (decisions).
+- ~~Default `/search` mode~~: `hybrid_rerank` (2026-10-25).
+- ~~Record the OCR mode/parser settings each index was built with~~: done, `index_chunks_by_parser` param on every run.
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
+| Metrics: `first_relevant_rank`, `hit_at_k`, `reciprocal_rank_at_k` on (doc_id, page); `refusal_metrics` (refused = positive class, score == threshold answered, nothing retrieved = refused, undefined precision/recall = None) | `f97d11e` test → `ce7d392` feat | `Tasks/P3 - Retrieval and refusal metrics.md` |
+| Eval-set validator: `EvalQuestion` (Pydantic, extra fields forbidden, answerable/unanswerable consistency), `validate_eval_set` (every error with line + id; duplicate ids; unknown doc_id; page out of range; quote on a stated page, ignoring case/spacing), `load_eval_set`, `load_reference_pages` (text layer, OCR cache for scans) | `ded28c7` test → `b8c7b25` feat | `Tasks/P3 - Eval-set validator.md` |
+| Eval set: `eval/questions.jsonl` (47 q: 42 answerable over all 6 manuals incl. 7 scanned-manual, 5 table, 5 unanswerable; 18/42 paraphrased), `eval/README.md`, `eval/CHANGELOG.md`; `wording` field added to the schema | `37bfac0` test → `26dcd72` feat; `dcdc6b8` feat | `Tasks/P3 - Building the eval set.md` |
+| Eval runner core: `evaluate` (rank of first relevant page in top 10, latency, best dense score in top 5), `summarize` (Hit@1/5, MRR@10, p50/p95 latency; subsets all/table/scanned/paraphrased/manual_wording), `refusal_cases`, `choose_threshold` (max refusal F1, lowest on ties) | `bb5c8b6` test → `d2a035b` feat | `Tasks/P3 - Retrieval eval runner.md` |
+| `make eval`: `run_retrieval.py` (6 configs, warm-up query, refusal @0.6 + tuned, Markdown report), `tracking.py` (`Tracker`, `MlflowTracker` SQLite, `NullTracker`), `eval/run_retrieval_eval.py`, `make mlflow-ui`, `MLFLOW_*` settings; first results `eval/results/retrieval.md` | `296f4fd` chore → `f0d66f4` test → `b08953e` feat → `8d8752a` results | `Tasks/P3 - make eval and MLflow tracking.md` |
+| Reranker comparison: `RERANK_VARIANTS` (bge-base c10, MiniLM-L6 c10/c20, jina-tiny c10/c20) on the main index, one cross-encoder per model, "Reranker comparison" report section (vs plain hybrid, with latency) | `23c058f` test → `034e837` feat → `c02ed09` results | `Tasks/P3 - Reranker comparison.md` |
+| Served defaults: `/search` `mode` defaults to `hybrid_rerank`, `RERANKER_MODEL` defaults to `Xenova/ms-marco-MiniLM-L-6-v2` (user's `.env` line updated too); eval `hybrid_rerank` = served reranker, bge-base c20 → `hybrid_rerank_bge_base_c20`, prefix pair → `hybrid_rerank_qprefix`; no-match test pinned to `bm25` | `d582a59` test → `339f481` test → `2c8b51c` feat → `d1fb9f3` results | `Tasks/P3 - Choosing the served defaults.md` |
+| OCR tables as Markdown: `html_tables_to_markdown` in `cleaning.py` (reuses pdfplumber's `table_to_markdown`; only inside `<table>`, inline tags dropped, break tags → space, entities unescaped, `colspan` padded, empty rows dropped, literal `<` kept), applied in `parse_document` after the cache; re-ingested main + `olmocr_all` | `040f8e2` test → `ce47711` feat → `1bc9529` results | `Tasks/P3 - OCR tables as Markdown.md` |
+| Query prefix: `EMBEDDING_QUERY_PREFIX` setting (default "", passed by `make_dense_index`), `BGE_QUERY_PREFIX`, `PREFIX_CONFIGS` (`dense`/`hybrid`/`hybrid_rerank_minilm_c20` + `_qprefix`), `query_prefix` param on every dense-based run (pinned, not from `.env`), "Query prefix comparison" report section; fix: reranker variants no longer appear as extra rows in the parser comparison | `9176ac9` test → `b9b2098` test → `ec5aca8` feat → `55b9ece` results | `Tasks/P3 - Query prefix and eval memory.md` |
+| Eval memory: `unload()` on `FastEmbedCrossEncoder` / `FastEmbedEmbedder`, `EvalConfig.unload` called after each config (first full run with 18 configs was killed by Claude Code for low system memory at config 8) | `63cb3c9` test → `95f3956` feat | `Tasks/P3 - Query prefix and eval memory.md` |
+| Parser comparison: `ingestion/variants.py` (`olmocr_all` variant, `CacheOnlyOcrClient`), `--variant` on `python -m rig_assist.ingestion`, `make ingest-olmocr`; `olmocr_all_<mode>` eval configs, `parser` param, "Parser comparison" report section | `a545afa` test → `ad52b00` feat → `fbee6ff` results | `Tasks/P3 - Parser comparison.md` |
 
 ## Decisions made during the project (beyond PLAN.md)
 
@@ -118,6 +188,19 @@ Branch `phase-2-hybrid`.
 - 2026-10-24: **v1 baseline = two configs (user's decision):** `v1_baseline` = v1 end to end (ported `src/rag/parsing.py`: pypdf text + pdfplumber tables, v1 header stripping, no OCR; v1 token-window chunker; Okapi BM25; dense; RRF k=60, 20 each) and `v1_retrieval_on_v2_pages` = the same chunking/retrieval on v2's parsed pages (ablation: pages vs retrieval). **Embedder: fastembed quantized ONNX bge-small (user's decision), not v1's sentence-transformers fp32**; measure the ranking difference in Phase 5 when torch is in the `train` group. Chunk IDs use v2 doc_id. Stores in `data/index/baselines/<config>/`, Qdrant collections `rig_assist_chunks__<config>`. Not an API mode. v1's own chunking/parsing tests ported. `BM25Index(idf="lucene"|"okapi")`; Okapi scores tested equal to rank-bm25 `BM25Okapi`.
 - 2026-10-24: `OCR_MODE=missing make ingest-v1` (OCR from cache, no GPU): 9 min 50 s for both. `v1_baseline` 1,142 chunks (Marine scanned manual: 0 chunks, as v1); `v1_retrieval_on_v2_pages` 1,296; v2 main 1,316. Store counts = Qdrant counts. pypdf warns about missing fontTools (CFF fonts in one manual); v1 had the same, kept.
 - 2026-10-24: **The user's `.env` has `OCR_MODE=off`**, but the v2 main index was built with `missing`. A plain `make ingest` now would drop the scanned manual. Phase 3: pin the OCR mode used for each index (e.g. record it in `DocumentInfo` or the eval run params) so results are reproducible.
+- 2026-10-24: Eval-set reference text = raw text layer (pdfplumber, incl. tables as Markdown, before header/footer stripping and dot-leader collapsing), or the cached olmOCR output for pages without a text layer. Real corpus: 6 docs, 982 pages, 5 empty (the known blank pages); loading takes 56 s (pdfplumber), fine for validation, cache it if the eval runner needs it every run.
+- 2026-10-24: Eval set: one `expected_doc_id` per question, so questions whose key fact appears in two manuals were dropped (checked by regex over all 982 pages); same fact on two pages of one manual → both pages listed. Added a required `wording: manual|paraphrased` field (beyond PLAN's schema) so BM25 vs dense can be compared on paraphrased questions. Paraphrased share is 43%, above PLAN's "roughly 30%".
+- 2026-10-24: MLflow: pin **3.17.0** (2026-10-07; 3.17.1/3.17.2 under two weeks old), in a separate `eval` dependency group (not in the API image). Backend **SQLite** (`sqlite:///…mlflow.db`, MLflow's default since 3.7); not the legacy file store, which is in maintenance mode and has a path-traversal CVE (CVE-2026-53995, ≤ 3.17.1, FileStore only).
+- 2026-10-24: "Not found" rule for the eval: refuse when no top-5 result has a dense (cosine) score ≥ threshold (v1: 0.6). Undefined for pure BM25 (no cosine). Tuned threshold = best refusal F1 on the eval set, lowest on ties; reported next to 0.6 and labelled as tuned on the test set.
+- 2026-10-24: **First retrieval eval** (commit `b08953e`, 9 min 30 s locally, 3.3 GB peak; no sandbox needed). Hit@5 / MRR@10 on 42 answerable: bm25 0.79/0.723, dense 0.90/0.766, hybrid 0.86/0.804, hybrid_rerank 0.90/0.834 (10 s/query), v1_baseline 0.76/0.651, v1_retrieval_on_v2_pages 0.88/0.795. Scanned manual: v1_baseline 0/7, all v2 configs 5–6/7. Paraphrased: bm25 Hit@5 0.61 vs dense 0.89. **v1's 0.6 cosine threshold refuses nothing useful**: all 5 unanswerable questions score 0.63–0.73 top cosine, the only score below 0.6 is answerable (0.576); tuned 0.667 gives P 0.60 / R 0.60 (optimistic). Cosine alone is a weak "not found" signal: revisit in Phase 4 (reranker score or LLM check). Misses common to most configs: q021 (CDS table), q037 (Marine floating objects): worth a failure analysis.
+- 2026-10-24: Index provenance per run = `index_chunks_by_parser` read from the index (e.g. `{"olmocr": 195, "pdfplumber": 1121}`), which closes the Phase 2 item "record the OCR mode each index was built with".
+- 2026-10-24: **Parser comparison** (commit `ad52b00`). `make ingest-olmocr` builds `data/index/variants/olmocr_all` + Qdrant `rig_assist_chunks__olmocr_all` from the OCR cache only (`CacheOnlyOcrClient` fails on an uncached page instead of calling the server): 5 min, 0 OCR calls, 1,273 chunks (main: 1,316). Full `make eval` (10 configs) 17.5 min; main-index numbers reproduced exactly. Hit@5 / MRR@10, pdfplumber → olmOCR: bm25 0.79/0.723 → 0.81/0.736, dense 0.90/0.766 → 0.93/0.798, hybrid 0.86/0.804 → 0.88/0.764, hybrid_rerank 0.90/0.834 → 0.93/0.805. Table subset (5) identical; scanned subset identical (olmOCR text in both). Per question, ranks move both ways (dense: 7 better, 3 worse; hybrid: 2 better, 5 worse): **within noise** (one question = 0.024). **Decision: keep pdfplumber where there is a text layer, olmOCR only for pages without one** (`OCR_MODE=missing`): same quality, and OCR of the 834 text pages costs GPU time (22 min on the RTX 4090) for no measured gain. Caveat: 5 table questions can't detect a table-extraction difference.
+- 2026-10-24: **Reranker comparison** (commit `034e837`, full `make eval` 15 configs, 27.6 min, 5.7 GB peak, local: uploading 1 GB of models + indexes to a sandbox would take longer than the run). Hit@1 / Hit@5 / MRR@10 / p50 on 42 answerable: no rerank (hybrid) 31/36/0.804/0.07 s; bge-reranker-base c20 32/38/0.834/10.0 s, c10 32/39/0.838/5.5 s; MiniLM-L6 c10 34/40/0.865/1.2 s, **c20 34/41/0.877/2.3 s**; jina-tiny c10 33/40/0.858/1.2 s, c20 33/41/0.863/2.0 s. Existing configs reproduced exactly. Paired per question (reciprocal rank): MiniLM-20 vs bge-20 7 better / 3 worse, jina-20 vs bge-20 7/3 (sign test p = 0.34 each); MiniLM-20 vs no rerank 9/3 (p = 0.15); bge-20 vs no rerank 8/6 (p = 0.79). **Not significant on 42 questions, but consistent in direction** (both small models, all metrics). 20 vs 10 candidates: MiniLM 2 better / 0 worse (q021 enters at rank 4). **Recommendation: serve MiniLM-L6 with 20 candidates** (best on every metric, 4.4× faster than bge-base); not applied yet (default change goes with the `/search` default-mode decision). The rerankers also lift q021 (CDS table), one of the two common misses.
+- 2026-10-24: **Query prefix comparison** (commit `ec5aca8`, run at `95f3956`: 18 configs, 28.8 min, **4.25 GB peak**, was 5.7 GB before unloading models per config). Hit@5 / MRR@10, none → BGE prefix: dense 38/42 0.766 → 39/42 0.794; hybrid 36/42 0.804 → 39/42 0.822; hybrid_rerank_minilm_c20 41/42 0.877 → identical on every question. Paired: dense 6 better / 4 worse (p = 0.75), hybrid 5/2 (p = 0.45): **not significant**, small gains mostly on manual-wording questions for hybrid and paraphrased for dense MRR. After MiniLM reranking the prefix changes nothing (same ranks for all 42), since the cross-encoder reads the raw query and the relevant pages were in both top-20 candidate sets. Refusal: the prefix shifts cosine scores (tuned threshold 0.667 → 0.650), still weak (5 unanswerable). Every pre-existing config reproduced its quality numbers exactly. **Recommendation:** turn the prefix on only if a non-reranked mode is served; decided with item 4.
+- 2026-10-24: Unloading measured: releasing bge-reranker-base drops the process from 2.1 GB to 0.74 GB RSS, and repeated load/release cycles don't grow it. Reload cost is paid in each config's warm-up query, so latencies are unaffected.
+- 2026-10-24: Bug fixed: the reranker variants (all `mode=hybrid_rerank`, `parser=pdfplumber`) had shown up as 5 extra rows in the committed parser comparison (`c02ed09`). The parser table now takes only plain mode configs by name.
+- 2026-10-24: **Oversized chunks** (user chose "convert, verify"). Analysis first: all 22 were on Marine pp. 126–144 (annex log sheets and blank forms); 78% of their bge tokens were HTML tags (worst: 770 tokens, 14 of them text); **no eval question touches those pages** (only q040, p24, is on any HTML-table page), so the frozen set can't show a gain. Fix: OCR HTML tables → Markdown in cleaning (OCR cache keeps raw output). Re-ingest (cache only, 4 min 50 s each): main 1,316 → **1,302 chunks, 0 over 512 (max 488)**; `olmocr_all` 1,273 → 1,220, 2 over (cds-guide p216 certificate form with `____` fill-in lines, 918 tokens; one prose chunk at 514): known gap, comparison index only. Eval (18 configs, 28.8 min, 4.25 GB): 12 of 18 configs unchanged on every question. **q040** (the only question on an HTML-table page) rank 1 → 2 in the three MiniLM configs (MRR 0.877 → 0.865; Hit@5 unchanged): the answer row is intact; MiniLM scores the same page −6.4 as Markdown vs −2.5 as HTML (−4.8 without the `---` row), a model quirk on one question. Not tuned further (would be tuning on the test set). `dense_qprefix`: q032 1 → 2. `olmocr_all`: 6 questions move, both ways, mostly deep ranks. **Net: oversized chunks gone, no measurable quality change** beyond one-question noise. MiniLM-L6 c20 is still the best reranker (0.865 vs bge-base 0.834, jina 0.863).
+- 2026-10-25: **Served defaults (user's choice: "rerank by default")**. `/search` default `mode` `bm25` → `hybrid_rerank`; `RERANKER_MODEL` `BAAI/bge-reranker-base` → `Xenova/ms-marco-MiniLM-L-6-v2` (better on every metric, ~4.5× faster); `EMBEDDING_QUERY_PREFIX` stays empty (no effect after reranking). Main-index numbers: hybrid_rerank (MiniLM, 20) Hit@1 33/42, Hit@5 41/42, MRR@10 0.865, p50 2.1 s (laptop, 12 threads); hybrid 0.804 / 0.08 s; bge-base c20 0.834 / 9.7 s. Consequences: a request without `mode` needs Qdrant (BM25 still works with `mode=bm25`); `/search` never returns an empty "no match" list in the default mode (dense always has nearest neighbours), "not found" is `/ask`'s job (Phase 4); Azure's 1–2 vCPUs will be slower than the laptop (unmeasured, Phase 8). Docker check: `/search` without `mode` → `hybrid_rerank`, 1.9 s warm, 3.0 s first call. Eval rerun at `2c8b51c`: 22.3 min (was 28.8; olmocr_all rerank now uses MiniLM), every number unchanged under the new names; `olmocr_all_hybrid_rerank` with MiniLM 0.871 vs main 0.865, within noise (parser decision unchanged). The user's `.env` `RERANKER_MODEL` line was changed with their decision (only that line).
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
@@ -136,6 +219,8 @@ OCR GPU (RunPod, not the Docker credit): 2026-10-23, RTX 4090, ~1.5 h pod time i
 
 ## Pinned versions (as of Phase 0, plus Phase 1 additions)
 
+Phase 3: mlflow 3.17.0 (`eval` dependency group only; not in the API image or CI) · rerankers via fastembed's `TextCrossEncoder`: Xenova/ms-marco-MiniLM-L-6-v2 (served), BAAI/bge-reranker-base, jinaai/jina-reranker-v1-tiny-en (eval only)
+
 Phase 2: fastembed 0.9.0 (onnxruntime 1.31.0, tokenizers 0.23.3) · qdrant-client 1.19.1 · Qdrant server v1.19.2
 
 Phase 1: tiktoken 0.14.0 · rank-bm25 0.2.2 · numpy 2.5.4 · pdfplumber 0.11.10 (pypdfium2 5.14.0, pillow 13.0.0) · openai 3.28.0 · OCR server: vLLM 0.11.2 + allenai/olmOCR-2-7B-1025-FP8
@@ -144,12 +229,13 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 
 ## Deferred / known gaps
 
-- **Phase 3:** 22 chunks (1.7%) still exceed bge-small's 512 tokens, all OCR HTML tables in the scanned manual: candidate fix = HTML→Markdown tables or smaller chunks, measured on the eval set.
-- **Phase 3:** reranker model choice (bge-base 10.7 s/query vs MiniLM-L6 2.4 s vs jina-tiny 2.0 s) and candidate count, by quality and latency.
+- q037 (Marine manual, floating objects) is missed by most configs. The failure analysis was skipped (user, 2026-10-25).
+- `hybrid_rerank` latency on Azure's 1–2 vCPUs is not measured yet (laptop: 2.1 s p50). Measure in Phase 8.
+- `olmocr_all` index: 2 chunks over 512 bge tokens (cds-guide p216 `____` fill-in lines, like the old dot leaders; one prose chunk at 514). Collapse underscore runs in cleaning if this index is ever served.
+- 2026-10-24: The OCR API key (`OCR_API_KEY` in `.env`) was printed into a Claude session transcript by mistake (not in any file or commit). User advised to rotate it if the RunPod pod/key is still live.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
-- `make eval` is a placeholder that exit with an error until their phase.
-- OCR output has tables as HTML, which may be one long line: the chunker would cut it by tokens. Check real olmOCR output; convert HTML tables to Markdown if needed.
+- ~~OCR output has tables as HTML~~: converted to Markdown since 2026-10-24. `rowspan` is ignored (the cell appears in its first row only).
 - OCR: rotated pages not handled (olmOCR returns `is_rotation_valid`/`rotation_correction`; its pipeline re-renders rotated). Cache key doesn't include model/prompt version. Check both once real output exists.
 - A PDF deleted from `data/raw/` stays in the index (`IndexStore` has no `remove`). Add with the delete/upload API if needed.
 - No upload size limit on `POST /documents` (would return 413); no document delete endpoint.

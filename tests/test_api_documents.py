@@ -187,10 +187,12 @@ def test_search_returns_ranked_chunks_with_page_numbers(client: TestClient) -> N
     assert scores == sorted(scores, reverse=True)
 
 
-def test_search_defaults_to_bm25_and_five_results(client: TestClient) -> None:
+def test_search_defaults_to_hybrid_rerank_and_five_results(client: TestClient) -> None:
+    # The most accurate mode on the eval set (eval/results/retrieval.md); the others are
+    # one parameter away.
     upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
     body = search(client, query="pump").json()
-    assert body["mode"] == "bm25"
+    assert body["mode"] == "hybrid_rerank"
     assert len(body["results"]) <= 5
 
 
@@ -199,11 +201,20 @@ def test_search_respects_top_k(client: TestClient) -> None:
     assert len(search(client, query="the pump preventer", top_k=1).json()["results"]) == 1
 
 
-def test_search_with_no_match_returns_an_empty_list(client: TestClient) -> None:
+def test_keyword_search_with_no_match_returns_an_empty_list(client: TestClient) -> None:
     upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
-    response = search(client, query="helicopter")
+    response = search(client, query="helicopter", mode="bm25")
     assert response.status_code == 200
     assert response.json()["results"] == []
+
+
+def test_default_search_returns_the_nearest_chunks_even_without_a_keyword_match(
+    client: TestClient,
+) -> None:
+    # Dense retrieval always has nearest neighbours, so /search never says "nothing found";
+    # deciding that the manuals don't answer a question is /ask's job (Phase 4).
+    upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
+    assert search(client, query="helicopter").json()["results"] != []
 
 
 @pytest.mark.parametrize("mode", ["bm25", "dense", "hybrid", "hybrid_rerank"])
@@ -293,9 +304,10 @@ def test_search_validates_the_request(client: TestClient, body: dict[str, Any]) 
 
 def test_search_sees_documents_uploaded_after_the_app_started(client: TestClient) -> None:
     upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
-    assert search(client, query="riser tension").json()["results"] == []
+    assert search(client, query="riser tension", mode="bm25").json()["results"] == []
     upload(client, "Riser_Notes.pdf", SCANNED)
-    assert search(client, query="riser tension").json()["results"][0]["doc_id"] == "riser-notes"
+    top = search(client, query="riser tension", mode="bm25").json()["results"][0]
+    assert top["doc_id"] == "riser-notes"
 
 
 def test_app_loads_an_existing_index_at_startup(settings: Settings, dense: DenseIndex) -> None:
