@@ -69,6 +69,18 @@ def test_gemini_provider_requires_api_key_and_model() -> None:
         make_settings(llm_provider="gemini", gemini_api_key="g-test")
 
 
+def test_openai_compatible_provider_requires_a_base_url_and_model() -> None:
+    with pytest.raises(ValidationError, match="LLM_BASE_URL"):
+        make_settings(llm_provider="openai_compatible", llm_model="m")
+    with pytest.raises(ValidationError, match="LLM_MODEL"):
+        make_settings(llm_provider="openai_compatible", llm_base_url="http://pod:8000/v1")
+    # The key is optional: a self-hosted vLLM server may run without one.
+    settings = make_settings(
+        llm_provider="openai_compatible", llm_model="m", llm_base_url="http://pod:8000/v1"
+    )
+    assert settings.llm_api_key is None
+
+
 def test_llm_retries_default_to_two_and_cannot_be_negative() -> None:
     assert make_settings().llm_max_retries == 2
     assert make_settings(llm_max_retries=6).llm_max_retries == 6

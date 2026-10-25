@@ -289,6 +289,31 @@ def test_gemini_requests_go_to_the_chat_completions_path() -> None:
     assert sent[0].headers["authorization"] == "Bearer test-key"
 
 
+def test_make_llm_builds_a_client_for_any_openai_compatible_server() -> None:
+    # e.g. vLLM on a rented GPU: `vllm serve <model> --api-key ...` serves /v1.
+    settings = make_settings(
+        llm_provider="openai_compatible",
+        llm_model="org/open-model",
+        llm_base_url="https://pod-8000.proxy.example/v1",
+        llm_api_key="pod-key",
+        llm_max_retries=3,
+    )
+    llm = make_llm(settings)
+    assert isinstance(llm, OpenAiLlm)
+    assert (llm.model, llm.base_url, llm.max_retries) == (
+        "org/open-model",
+        "https://pod-8000.proxy.example/v1",
+        3,
+    )
+
+
+def test_openai_compatible_works_without_a_key() -> None:
+    settings = make_settings(
+        llm_provider="openai_compatible", llm_model="m", llm_base_url="http://localhost:8000/v1"
+    )
+    assert isinstance(make_llm(settings), OpenAiLlm)
+
+
 def test_every_real_provider_gets_the_configured_retries() -> None:
     settings = make_settings(
         llm_provider="openai", llm_model="gpt-test", openai_api_key="sk-test", llm_max_retries=4
