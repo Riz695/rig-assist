@@ -201,11 +201,20 @@ def test_search_respects_top_k(client: TestClient) -> None:
     assert len(search(client, query="the pump preventer", top_k=1).json()["results"]) == 1
 
 
-def test_search_with_no_match_returns_an_empty_list(client: TestClient) -> None:
+def test_keyword_search_with_no_match_returns_an_empty_list(client: TestClient) -> None:
     upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
-    response = search(client, query="helicopter")
+    response = search(client, query="helicopter", mode="bm25")
     assert response.status_code == 200
     assert response.json()["results"] == []
+
+
+def test_default_search_returns_the_nearest_chunks_even_without_a_keyword_match(
+    client: TestClient,
+) -> None:
+    # Dense retrieval always has nearest neighbours, so /search never says "nothing found";
+    # deciding that the manuals don't answer a question is /ask's job (Phase 4).
+    upload(client, "Drilling_Manual.pdf", PUMP_MANUAL)
+    assert search(client, query="helicopter").json()["results"] != []
 
 
 @pytest.mark.parametrize("mode", ["bm25", "dense", "hybrid", "hybrid_rerank"])
