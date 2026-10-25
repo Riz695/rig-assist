@@ -1,8 +1,9 @@
-"""OpenAI and Azure OpenAI through one client.
+"""OpenAI, Azure OpenAI and Gemini through one client.
 
 Azure's v1 API (GA since August 2025) accepts the plain `openai.OpenAI` client: point
 `base_url` at `https://<resource>.openai.azure.com/openai/v1/`, pass the Azure key, and
 use the deployment name as the model. No `AzureOpenAI` class and no `api-version`.
+Gemini has an OpenAI-compatible endpoint too (beta): GEMINI_BASE_URL with an AI Studio key.
 Any other OpenAI-compatible server (vLLM, a gateway) works the same way.
 """
 
@@ -10,6 +11,8 @@ import httpx2
 import openai
 
 from rig_assist.llm.models import LlmError, LlmResponse, Message, Usage
+
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
 def azure_base_url(endpoint: str) -> str:
@@ -23,12 +26,13 @@ class OpenAiLlm:
         model: str,
         api_key: str,
         base_url: str | None = None,  # None = api.openai.com
-        timeout: float = 60.0,
+        timeout: float = 120.0,  # Gemini's free tier took 97 s for one reply once
         max_retries: int = 2,  # the SDK retries 429/5xx/connection errors with backoff
         http_client: httpx2.Client | None = None,  # tests pass a mock transport here
     ) -> None:
         self.model = model
         self.base_url = base_url
+        self.max_retries = max_retries
         self._client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,

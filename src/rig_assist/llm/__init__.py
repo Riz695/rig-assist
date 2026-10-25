@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from rig_assist.llm.fake import FAKE_REPLY, FakeLlm
 from rig_assist.llm.models import LlmClient, LlmError, LlmResponse, Message, Usage
-from rig_assist.llm.openai_llm import OpenAiLlm, azure_base_url
+from rig_assist.llm.openai_llm import GEMINI_BASE_URL, OpenAiLlm, azure_base_url
 from rig_assist.llm.usage import Prices, cost_usd
 
 if TYPE_CHECKING:  # config imports llm.usage, so a runtime import here would be circular
@@ -16,7 +16,9 @@ def make_llm(settings: "Settings") -> LlmClient:
     if settings.llm_provider == "openai":
         assert settings.openai_api_key is not None
         return OpenAiLlm(
-            model=settings.llm_model, api_key=settings.openai_api_key.get_secret_value()
+            model=settings.llm_model,
+            api_key=settings.openai_api_key.get_secret_value(),
+            max_retries=settings.llm_max_retries,
         )
     if settings.llm_provider == "azure":
         assert settings.azure_openai_endpoint and settings.azure_openai_api_key
@@ -24,6 +26,15 @@ def make_llm(settings: "Settings") -> LlmClient:
             model=settings.llm_model,
             api_key=settings.azure_openai_api_key.get_secret_value(),
             base_url=azure_base_url(settings.azure_openai_endpoint),
+            max_retries=settings.llm_max_retries,
+        )
+    if settings.llm_provider == "gemini":
+        assert settings.gemini_api_key is not None
+        return OpenAiLlm(
+            model=settings.llm_model,
+            api_key=settings.gemini_api_key.get_secret_value(),
+            base_url=GEMINI_BASE_URL,
+            max_retries=settings.llm_max_retries,
         )
     return FakeLlm()
 
@@ -31,6 +42,7 @@ def make_llm(settings: "Settings") -> LlmClient:
 __all__ = [
     "FAKE_REPLY",
     "FakeLlm",
+    "GEMINI_BASE_URL",
     "LlmClient",
     "LlmError",
     "LlmResponse",
