@@ -3,9 +3,10 @@
 from fastapi import FastAPI
 
 from rig_assist import __version__
-from rig_assist.api.routes import documents, health, search
+from rig_assist.api.routes import ask, documents, health, search
 from rig_assist.config import Settings, get_settings
 from rig_assist.ingestion.store import IndexStore
+from rig_assist.llm import LlmClient, make_llm
 from rig_assist.retrieval.dense import DenseIndex, make_dense_index
 from rig_assist.retrieval.rerank import CrossEncoder, FastEmbedCrossEncoder
 from rig_assist.retrieval.service import SearchIndex
@@ -15,10 +16,12 @@ def create_app(
     settings: Settings | None = None,
     dense: DenseIndex | None = None,
     cross_encoder: CrossEncoder | None = None,
+    llm: LlmClient | None = None,
 ) -> FastAPI:
     """Build a fresh app. Tests pass their own settings (temp folders) and fakes for the
-    dense index and cross-encoder. The real ones connect and load models on first use,
-    so the app starts even when Qdrant is down (dense searches then return 503).
+    dense index, cross-encoder and LLM (default: the one LLM_PROVIDER names). The real
+    ones connect and load models on first use, so the app starts even when Qdrant is
+    down (dense searches then return 503).
     """
     settings = settings or get_settings()
     if dense is None:
@@ -36,12 +39,14 @@ def create_app(
         ),
     )
     app.state.settings = settings
+    app.state.llm = llm if llm is not None else make_llm(settings)
     app.state.search_index = SearchIndex(
         IndexStore(settings.data_index_dir), dense=dense, cross_encoder=cross_encoder
     )
     app.include_router(health.router)
     app.include_router(documents.router)
     app.include_router(search.router)
+    app.include_router(ask.router)
     return app
 
 

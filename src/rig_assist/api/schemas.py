@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from rig_assist.rag import RefusalReason
 from rig_assist.retrieval.service import SearchMode
 
 
@@ -85,3 +86,77 @@ class SearchResponse(BaseModel):
     query: str
     mode: str
     results: list[SearchHit] = Field(description="Best first. Empty when nothing matches.")
+
+
+DISCLAIMER = (
+    "Rig Assist is not a safety-certified system. Check every answer against the cited "
+    "manual pages and follow site procedures and your permit-to-work system."
+)
+
+
+class AskRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"question": "What should I do when a kick is detected while drilling?"}]
+        }
+    )
+
+    question: str = Field(min_length=1, max_length=1000, description="A question in plain words.")
+    mode: SearchMode = Field(
+        default="hybrid_rerank",
+        description="Retrieval method for the context, as in POST /search.",
+    )
+    top_k: int = Field(
+        default=5, ge=1, le=20, description="How many chunks the LLM gets as context."
+    )
+
+
+class AskCitation(BaseModel):
+    doc_id: str = Field(examples=["drilling-manual"])
+    doc_title: str = Field(examples=["Drilling Manual"])
+    page: int = Field(description="1-based page in the PDF.", examples=[36])
+    snippet: str = Field(
+        description="Start of the retrieved text on that page (up to 300 characters).",
+        examples=["7.1 Causes of a Kick. A kick is an influx of formation fluid…"],
+    )
+
+
+class AskUsage(BaseModel):
+    llm_calls: int = Field(description="0 when the answer was refused before the LLM.")
+    model: str | None = Field(description="The model that answered.", examples=["gpt-x"])
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float | None = Field(
+        description="Estimate from LLM_*_PRICE_PER_1M; null when prices aren't configured."
+    )
+
+
+class AskLatency(BaseModel):
+    retrieval_s: float
+    llm_s: float
+    total_s: float
+
+
+class AskResponse(BaseModel):
+    question: str
+    mode: SearchMode
+    top_k: int
+    answer: str = Field(
+        description="The answer with [doc-id p.N] citations, or 'Not found in the manuals.'"
+    )
+    found: bool = Field(description="False when the answer is 'Not found in the manuals.'")
+    refusal_reason: RefusalReason | None = Field(
+        description=(
+            "Why the answer is 'not found': no_results (retrieval found nothing), "
+            "not_relevant (the chunks didn't pass the relevance check), llm_not_found "
+            "(the LLM said the context doesn't answer it), no_citations or "
+            "invalid_citation (the answer cited nothing, or a page that wasn't retrieved)."
+        ),
+        examples=[None],
+    )
+    citations: list[AskCitation] = Field(
+        description="One per cited page, in the order the answer cites them."
+    )
+    usage: AskUsage
+    latency: AskLatency
+    disclaimer: str = DISCLAIMER

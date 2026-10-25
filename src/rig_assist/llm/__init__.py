@@ -1,0 +1,65 @@
+"""Provider-agnostic LLM access: one `LlmClient` interface, chosen by LLM_PROVIDER."""
+
+from typing import TYPE_CHECKING
+
+from rig_assist.llm.fake import FAKE_REPLY, FakeLlm
+from rig_assist.llm.models import LlmClient, LlmError, LlmResponse, Message, Usage
+from rig_assist.llm.openai_llm import GEMINI_BASE_URL, OpenAiLlm, azure_base_url
+from rig_assist.llm.usage import Prices, cost_usd
+
+if TYPE_CHECKING:  # config imports llm.usage, so a runtime import here would be circular
+    from rig_assist.config import Settings
+
+
+def make_llm(settings: "Settings") -> LlmClient:
+    """The client LLM_PROVIDER asks for. Settings already checked the required variables."""
+    if settings.llm_provider == "openai":
+        assert settings.openai_api_key is not None
+        return OpenAiLlm(
+            model=settings.llm_model,
+            api_key=settings.openai_api_key.get_secret_value(),
+            max_retries=settings.llm_max_retries,
+        )
+    if settings.llm_provider == "azure":
+        assert settings.azure_openai_endpoint and settings.azure_openai_api_key
+        return OpenAiLlm(
+            model=settings.llm_model,
+            api_key=settings.azure_openai_api_key.get_secret_value(),
+            base_url=azure_base_url(settings.azure_openai_endpoint),
+            max_retries=settings.llm_max_retries,
+        )
+    if settings.llm_provider == "gemini":
+        assert settings.gemini_api_key is not None
+        return OpenAiLlm(
+            model=settings.llm_model,
+            api_key=settings.gemini_api_key.get_secret_value(),
+            base_url=GEMINI_BASE_URL,
+            max_retries=settings.llm_max_retries,
+        )
+    if settings.llm_provider == "openai_compatible":
+        assert settings.llm_base_url is not None
+        key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else "not-needed"
+        return OpenAiLlm(
+            model=settings.llm_model,
+            api_key=key,  # the SDK needs a value; a keyless server ignores it
+            base_url=settings.llm_base_url,
+            max_retries=settings.llm_max_retries,
+        )
+    return FakeLlm()
+
+
+__all__ = [
+    "FAKE_REPLY",
+    "FakeLlm",
+    "GEMINI_BASE_URL",
+    "LlmClient",
+    "LlmError",
+    "LlmResponse",
+    "Message",
+    "OpenAiLlm",
+    "Prices",
+    "Usage",
+    "azure_base_url",
+    "cost_usd",
+    "make_llm",
+]

@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from rig_assist.llm.usage import Prices
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -53,11 +55,20 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     # "fake" is the default so the app and tests run offline and free.
-    llm_provider: Literal["fake", "openai", "azure"] = "fake"
+    llm_provider: Literal["fake", "openai", "azure", "gemini", "openai_compatible"] = "fake"
     llm_model: str = ""
     openai_api_key: SecretStr | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: SecretStr | None = None
+    gemini_api_key: SecretStr | None = None  # Google AI Studio key
+    # Any other OpenAI-compatible server, e.g. vLLM on a rented GPU (docs/llm-gpu.md).
+    llm_base_url: str | None = None
+    llm_api_key: SecretStr | None = None  # optional: a self-hosted server may not need one
+    # The openai SDK retries 429 (rate limit), 5xx and connection errors with backoff.
+    llm_max_retries: int = Field(default=2, ge=0)
+    # USD per 1M tokens, for the cost estimate in responses. Unset = cost unknown (null).
+    llm_input_price_per_1m: float | None = Field(default=None, ge=0)
+    llm_output_price_per_1m: float | None = Field(default=None, ge=0)
 
     # --- Tracing (optional) ---
     langfuse_public_key: str | None = None
@@ -67,6 +78,12 @@ class Settings(BaseSettings):
     @property
     def langfuse_enabled(self) -> bool:
         return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
+    @property
+    def llm_prices(self) -> "Prices | None":
+        if self.llm_input_price_per_1m is None or self.llm_output_price_per_1m is None:
+            return None
+        return Prices(self.llm_input_price_per_1m, self.llm_output_price_per_1m)
 
     @model_validator(mode="after")
     def _check_credentials(self) -> "Settings":
@@ -79,10 +96,22 @@ class Settings(BaseSettings):
                 ("AZURE_OPENAI_API_KEY", self.azure_openai_api_key),
                 ("LLM_MODEL", self.llm_model),
             ],
+            "gemini": [("GEMINI_API_KEY", self.gemini_api_key), ("LLM_MODEL", self.llm_model)],
+            "openai_compatible": [
+                ("LLM_BASE_URL", self.llm_base_url),
+                ("LLM_MODEL", self.llm_model),
+            ],
         }
         missing = [name for name, value in required[self.llm_provider] if not value]
         if missing:
             raise ValueError(f"LLM_PROVIDER={self.llm_provider} requires: {', '.join(missing)}")
+        prices = {
+            "LLM_INPUT_PRICE_PER_1M": self.llm_input_price_per_1m,
+            "LLM_OUTPUT_PRICE_PER_1M": self.llm_output_price_per_1m,
+        }
+        unset = [name for name, value in prices.items() if value is None]
+        if len(unset) == 1:
+            raise ValueError(f"Set both LLM prices or neither; missing: {unset[0]}")
         # The API key stays optional: a self-hosted vLLM server may not need one.
         if self.ocr_mode != "off" and not self.ocr_base_url:
             raise ValueError(f"OCR_MODE={self.ocr_mode} requires: OCR_BASE_URL")
