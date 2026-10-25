@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 3 (Evaluation), branch `phase-3-eval` (created from `main` at `23d26f9` and pushed, 2026-10-24). In progress: see "Phase 3: start here" and the task table below. Eval set **frozen 2026-10-24** after the user's spot-check. `make eval` works (10 configs, results committed). Parser comparison done: no measurable difference, pdfplumber kept. Reranker comparison done: MiniLM-L6 / 20 candidates recommended (not yet the served default). Query prefix measured: small, non-significant gain for dense/hybrid, no effect after MiniLM reranking. Oversized chunks fixed (OCR HTML tables → Markdown, 22 → 0 over 512 tokens; no measurable quality change). Defaults chosen (user, 2026-10-25): `/search` = `hybrid_rerank` with MiniLM-L6, prefix off. Next: optional failure analysis (q021, q037), then end of phase (lint, tests, PR).
+- **Current phase:** 3 (Evaluation), branch `phase-3-eval`. **Done; [PR #5](https://github.com/Riz695/rig-assist/pull/5) opened 2026-10-25, waiting for the user's review (never merge it yourself).** End-of-phase checks passed: `make lint` clean, `make test` 440 passed, CI green (lint, tests 3.11/3.12, docker). Served defaults: `/search` = `hybrid_rerank` with MiniLM-L6. Next after merge: Phase 4 (single-agent RAG baseline, `/ask`), then the answer eval.
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
@@ -98,8 +98,8 @@ Order of work (from `PLAN.md`):
 2. ~~BGE query prefix with vs without~~: done (decisions, 2026-10-24). `EMBEDDING_QUERY_PREFIX` setting exists (default empty); whether to turn it on is folded into item 4.
 3. ~~22 oversized chunks~~: done (decisions, 2026-10-24): OCR HTML tables → Markdown in cleaning.
 4. ~~Default `/search` mode, served reranker, query prefix~~: done (decisions, 2026-10-25).
-5. Optional: failure analysis of q021 (CDS table) and q037 (Marine floating objects), missed by most configs.
-6. End of phase: `make lint` + `make test`, PR `phase-3-eval` → `main`, stop for the user's review (never merge).
+5. ~~Failure analysis of q021/q037~~: skipped (user, 2026-10-25); q021 is now found by the MiniLM reranker.
+6. ~~End of phase~~: done 2026-10-25, [PR #5](https://github.com/Riz695/rig-assist/pull/5).
 Teaching mode continues: after each task, explanation + Obsidian notes (`Tasks/P3 - ...`), then wait for "continue". Last notes written: `Tasks/P3 - OCR tables as Markdown.md`.
 
 Open items to measure in Phase 3 (from Phase 2):
