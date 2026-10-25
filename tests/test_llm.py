@@ -61,6 +61,16 @@ def test_fake_without_a_script_always_gives_the_default_reply() -> None:
     assert [llm.complete(PROMPT).text for _ in range(3)] == [FAKE_REPLY] * 3
 
 
+def test_fake_default_reply_cites_the_first_label_in_the_prompt() -> None:
+    # So LLM_PROVIDER=fake gives /ask an answer with a citation it can check.
+    prompt = [
+        Message("system", "Cite like [example p.7]."),
+        Message("user", "[bop-manual p.12] Test weekly.\n\n[safety p.3] Wear PPE.\n\nQ?"),
+    ]
+    assert FakeLlm().complete(prompt).text == f"{FAKE_REPLY} [bop-manual p.12]"
+    assert "[" not in FAKE_REPLY
+
+
 def test_fake_is_deterministic_across_instances() -> None:
     first = FakeLlm(replies=["same"]).complete(PROMPT)
     second = FakeLlm(replies=["same"]).complete(PROMPT)
