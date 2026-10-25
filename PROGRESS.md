@@ -35,7 +35,7 @@ Branch `phase-4-rag`. Order of work: LLM layer → RAG pipeline (prompt, citatio
 
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
-| LLM layer: `LlmClient` protocol, `Message`/`Usage`/`LlmResponse`/`LlmError`, `FakeLlm` (scripted replies, records prompts, word-count usage, `FAKE_REPLY` default), `OpenAiLlm` (chat completions, `max_completion_tokens`, finish_reason/empty/HTTP errors → `LlmError`), `azure_base_url`, `make_llm`, `Prices`/`cost_usd`, `LLM_INPUT/OUTPUT_PRICE_PER_1M` | `413cf10` test → FEAT feat | `Tasks/P4 - LLM client layer.md` |
+| LLM layer: `LlmClient` protocol, `Message`/`Usage`/`LlmResponse`/`LlmError`, `FakeLlm` (scripted replies, records prompts, word-count usage, `FAKE_REPLY` default), `OpenAiLlm` (chat completions, `max_completion_tokens`, finish_reason/empty/HTTP errors → `LlmError`), `azure_base_url`, `make_llm`, `Prices`/`cost_usd`, `LLM_INPUT/OUTPUT_PRICE_PER_1M` | `413cf10` test → `63d95d0` feat | `Tasks/P4 - LLM client layer.md` |
 
 Phase 3 findings Phase 4 depends on:
 - **Retrieval for `/ask`:** use the served default, `hybrid_rerank` (MiniLM-L6, 20 candidates): MRR@10 0.865, Hit@5 41/42, about 2 s per query on the laptop.
