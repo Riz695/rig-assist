@@ -310,3 +310,45 @@ def test_report_has_the_answer_summary_rules_and_one_row_per_question() -> None:
     for rec in RECORDS:
         assert f"| {rec.id} |" in report
     assert "Text of page" not in report  # no manual text in the committed report
+
+
+def test_report_adds_the_judge_section_and_scores_per_question() -> None:
+    from rig_assist.evaluation.judge import JudgeRecord
+    from rig_assist.evaluation.run_answers import render_report
+
+    def verdict(qid: str, answerable: bool, faith: int | None, correct: int) -> JudgeRecord:
+        return JudgeRecord(
+            id=qid,
+            answerable=answerable,
+            outcome="judged" if faith is not None else "refused",
+            faithfulness=faith,
+            correctness=correct,
+            faithfulness_reason="",
+            correctness_reason="",
+            raw_reply=None,
+            attempts=1 if faith is not None else 0,
+            input_tokens=0,
+            output_tokens=0,
+            config={},
+        )
+
+    verdicts = [
+        verdict("a1", True, 2, 2),
+        verdict("a2", True, 1, 1),
+        verdict("a3", True, None, 0),
+        verdict("u1", False, None, 2),
+        verdict("u2", False, 2, 0),
+        verdict("u3", False, None, 2),
+    ]
+    report = render_report(RECORDS, verdicts=verdicts)
+    assert "## LLM judge" in report
+    assert "| Correctness, answerable questions (refused = 0) | 1 | 1 | 1 |" in report
+    assert "| Faithfulness, answers judged | 2 | 1 | 0 |" in report
+    assert "| a1 | yes | yes |  | 3.00 | yes | 2 | 2 |" in report
+    assert "| a3 | yes | no | llm_not_found | 1.00 | no | – | 0 |" in report
+
+
+def test_report_without_verdicts_has_no_judge_section() -> None:
+    from rig_assist.evaluation.run_answers import render_report
+
+    assert "## LLM judge" not in render_report(RECORDS)
