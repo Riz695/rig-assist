@@ -5,8 +5,8 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 4 (Single-agent RAG baseline), branch `phase-4-rag` (from `main` at `ad63769`), everything committed and pushed. Done: LLM layer, RAG pipeline, `POST /ask`, Gemini + `openai_compatible` providers, `make eval-answers` with results, citation parser fix, **LLM judge code (tested offline; real run not done)**. Judge run done (results in decisions, 2026-10-25); user accepted the spot-check. **End of phase done 2026-10-25:** `make lint` clean, `make test` 585 passed, CI green, [PR #6](https://github.com/Riz695/rig-assist/pull/6) open. **Waiting for the user's review and merge** (never merge it yourself); then Phase 5 (fine-tuning the retriever) on a new branch from `main`. Teaching mode: last notes written `Tasks/P4 - LLM judge.md` + `Concepts/LLM-as-a-judge.md` (explanation given 2026-10-25, waiting for "continue").
-- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`). **Phase 3:** merged by the user on 2026-10-25 ([PR #5](https://github.com/Riz695/rig-assist/pull/5), merge commit `ad63769`).
+- **Current phase:** 5 (Fine-tuning the retriever), branch `phase-5-finetune` (from `main` at `3ea8497`, the PR #6 merge). See "Phase 5" below for the order of work and what's done. Teaching mode continues (explain each task, notes in Obsidian, wait for "continue").
+- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`). **Phase 3:** merged by the user on 2026-10-25 ([PR #5](https://github.com/Riz695/rig-assist/pull/5), merge commit `ad63769`). **Phase 4:** merged by the user on 2026-10-25 ([PR #6](https://github.com/Riz695/rig-assist/pull/6), merge commit `3ea8497`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
 - **Blockers for Phase 1 (all resolved, kept for history):**
@@ -28,6 +28,21 @@ Running log of what's done, so any new session (or person) can pick up where the
 - ✅ RRF fusion tests with deterministic fake rankings (`tests/test_hybrid.py`); idempotent ingestion in both indexes (`tests/test_pipeline.py`, `tests/test_api_documents.py`, `tests/test_v1_baseline.py`); mode dispatch with fakes (`tests/test_search_service.py`).
 - ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
 - User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
+
+## Phase 5: Fine-tuning the retriever
+
+Branch `phase-5-finetune`. Goal (PLAN.md): a *measured* gain from domain-adapting `bge-small-en-v1.5`, served exactly like the base model (ONNX through fastembed). Baseline to beat (main index, Phase 3): dense Hit@5 38/42, MRR@10 0.766; hybrid 0.804; hybrid_rerank (MiniLM c20) 0.865.
+
+Order of work:
+1. **Tests first:** training-pair builder: deterministic given a seed, no duplicate pairs, **eval-set pages excluded** from positives (leakage guard), stable train/validation split.
+2. Synthetic queries per chunk with an LLM (prompt, parser, resumable cache; fake LLM in tests). **Estimate the cost and ask the user first** (which LLM: RunPod Qwen pod or Gemini).
+3. Hard-negative mining (BM25 + base embedder; never the positive chunk or its page).
+4. Training: `train` dependency group (torch CPU wheels, sentence-transformers; check current docs, pin), MultipleNegativesRankingLoss, MLflow runs + registry. Sandbox if long (estimate first).
+5. ONNX export + fastembed custom model + `EMBEDDING_MODEL` switch (fake loader test; parity test marked `slow`).
+6. Re-run the frozen retrieval eval: base vs fine-tuned → `eval/results/finetune.md`.
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
 
 ## Phase 4: Single-agent RAG baseline
 
@@ -66,7 +81,7 @@ Branch `phase-4-rag`. Order of work: LLM layer → RAG pipeline (prompt, citatio
 **State of the user's `.env` (2026-10-25):** `LLM_PROVIDER=openai_compatible`, `LLM_MODEL=Qwen/Qwen3.6-35B-A3B-FP8`, `LLM_BASE_URL` and `LLM_API_KEY` point at the **terminated** pod `c60h6geksbdz63` (dead key, harmless). A real `/ask` returns 502 until a new pod is up; set `LLM_PROVIDER=fake` to use the API locally meanwhile. `GEMINI_API_KEY` is still set (free tier, 20 requests/day/model).
 
 **Open items for the user:**
-- **Rotate the Gemini API key** (pasted into the chat on 2026-10-25): delete it in AI Studio, create a new one, put it in `.env` yourself.
+- ~~Rotate the Gemini API key~~: done by the user on 2026-10-25.
 - RunPod balance: ~$7 before 2026-10-25, minus ≈ $0.26 for pod `9xyapq4l6t84qt` (confirm with `list-pod-billing` once posted).
 
 **End of Phase 4 (after the judge):** `make lint`, `make test` (556 passed at `acd380d`), push, open the PR `phase-4-rag` → `main` with a summary (incl. results, the model used for the eval vs Azure in prod, the RunPod/Gemini detours), stop for the user's review; never merge it yourself.
@@ -283,7 +298,7 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - q037 (Marine manual, floating objects) is missed by most configs. The failure analysis was skipped (user, 2026-10-25).
 - `hybrid_rerank` latency on Azure's 1–2 vCPUs is not measured yet (laptop: 2.1 s p50). Measure in Phase 8.
 - `olmocr_all` index: 2 chunks over 512 bge tokens (cds-guide p216 `____` fill-in lines, like the old dot leaders; one prose chunk at 514). Collapse underscore runs in cleaning if this index is ever served.
-- 2026-10-25: **Gemini API key (free tier) was pasted into the Claude chat** by the user (working remotely, no laptop access). Stored only in `.env` as `GEMINI_API_KEY` (gitignored, fingerprint sha256 `c2a0f16b5ac3`). **Rotate it in AI Studio when back at the laptop** and put the new one in `.env` directly.
+- 2026-10-25: **Gemini API key (free tier) was pasted into the Claude chat** by the user (working remotely, no laptop access). Stored only in `.env` as `GEMINI_API_KEY` (gitignored, fingerprint sha256 `c2a0f16b5ac3`). **Rotated by the user on 2026-10-25** (old key dead).
 - 2026-10-24: The OCR API key (`OCR_API_KEY` in `.env`) was printed into a Claude session transcript by mistake (not in any file or commit). User advised to rotate it if the RunPod pod/key is still live.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
