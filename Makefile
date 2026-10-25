@@ -2,7 +2,7 @@
 # so CI and humans run exactly the same commands. `make help` lists them.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev test lint format ingest ingest-olmocr ingest-v1 eval mlflow-ui up down
+.PHONY: help install dev test lint format ingest ingest-olmocr ingest-v1 eval eval-answers mlflow-ui up down
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -37,6 +37,9 @@ ingest-v1: ## Build the v1 baseline indexes (v1 parser + v1 retrieval on v2 page
 
 eval: ## Retrieval eval of every config → eval/results/retrieval.md + MLflow runs (needs Qdrant)
 	uv run --group eval python eval/run_retrieval_eval.py
+
+eval-answers: ## Answer the eval set with /ask's pipeline (real LLM from .env; resumes) → eval/results/answers.md
+	uv run --group eval python eval/run_answer_eval.py
 
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db

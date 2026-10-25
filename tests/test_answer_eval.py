@@ -293,3 +293,20 @@ def test_answer_stats_count_answers_expected_pages_and_reasons() -> None:
     assert stats.unanswerable_answered == 1  # u2
     assert stats.refusal_reasons == {"llm_not_found": 3}
     assert stats.input_tokens == 0 and stats.output_tokens == 0
+
+
+# --- Report -------------------------------------------------------------
+
+
+def test_report_has_the_answer_summary_rules_and_one_row_per_question() -> None:
+    from rig_assist.evaluation.run_answers import render_report
+
+    report = render_report(RECORDS, notes=["Generated for a test."])
+    assert "Generated for a test." in report
+    assert "| Answerable questions answered | 2/3 |" in report
+    assert "| Unanswerable questions answered anyway | 1/3 |" in report
+    assert "LLM only" in report
+    assert report.count("Reranker gate only") == 2  # tuned and safe thresholds
+    for rec in RECORDS:
+        assert f"| {rec.id} |" in report
+    assert "Text of page" not in report  # no manual text in the committed report
