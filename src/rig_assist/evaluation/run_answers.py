@@ -31,7 +31,7 @@ from rig_assist.evaluation.tracking import MlflowTracker, NullTracker, Tracker
 from rig_assist.ingestion.cache import PageCache
 from rig_assist.ingestion.store import IndexStore
 from rig_assist.llm import LlmError, make_llm
-from rig_assist.rag import SYSTEM_PROMPT, RagPipeline
+from rig_assist.rag import MAX_ANSWER_TOKENS, SYSTEM_PROMPT, RagPipeline
 from rig_assist.retrieval.dense import make_dense_index
 from rig_assist.retrieval.rerank import FastEmbedCrossEncoder
 from rig_assist.retrieval.service import SearchIndex, SearchMode
@@ -170,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         "mode": MODE,
         "top_k": str(TOP_K),
         "reranker_model": settings.reranker_model,
+        "max_answer_tokens": str(MAX_ANSWER_TOKENS),
         "system_prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest()[:12],
     }
     cache = AnswerCache(args.cache, config)

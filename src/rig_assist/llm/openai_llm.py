@@ -61,11 +61,15 @@ class OpenAiLlm:
         if not choice.message.content:
             raise LlmError("empty output")
         usage = response.usage
+        output_tokens = 0
+        if usage:
+            # OpenAI counts reasoning inside completion_tokens; Gemini's endpoint leaves its
+            # thinking out and counts it only in total_tokens. Either way it's billed output.
+            output_tokens = max(usage.completion_tokens, usage.total_tokens - usage.prompt_tokens)
         return LlmResponse(
             text=choice.message.content,
             usage=Usage(
-                input_tokens=usage.prompt_tokens if usage else 0,
-                output_tokens=usage.completion_tokens if usage else 0,
+                input_tokens=usage.prompt_tokens if usage else 0, output_tokens=output_tokens
             ),
             model=response.model,
         )

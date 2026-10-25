@@ -36,9 +36,11 @@ class FakeLlm:
         self.model = model
         self._replies = list(replies) if replies is not None else None
         self.calls: list[list[Message]] = []
+        self.max_tokens: list[int] = []  # the token limit each call asked for
 
     def complete(self, messages: list[Message], max_tokens: int = 1024) -> LlmResponse:
         self.calls.append(list(messages))
+        self.max_tokens.append(max_tokens)
         if self._replies is None:
             text = _default_reply(messages)
         elif self._replies:

@@ -24,7 +24,9 @@ from rig_assist.rag.prompt import NOT_FOUND, build_messages
 from rig_assist.retrieval.models import Retriever, ScoredChunk
 
 SNIPPET_CHARS = 300
-MAX_ANSWER_TOKENS = 1024
+# Output cap for one answer, including a model's hidden thinking: Gemini 3.5 Flash thought
+# 600-900 tokens before a ~200-token answer, so 1,024 cut answers off (finish_reason=length).
+MAX_ANSWER_TOKENS = 4096
 
 RefusalReason = Literal[
     "no_results", "not_relevant", "llm_not_found", "no_citations", "invalid_citation"
