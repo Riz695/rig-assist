@@ -43,6 +43,7 @@ Order of work:
 
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
+| Training-pair builder (`training/pairs.py`): `eval_pages`, `trainable_chunks` (not on an eval page, ≥ 30 words), `split_of` (SHA-256 of `doc_id:page`, val 10%), `build_pairs` (unknown chunk → error, eval pages skipped again, normalised dedup, query for two chunks dropped, sorted then seeded shuffle). Real index: 42 eval pages / 65 chunks excluded, **1,160 trainable chunks**, 1,029 train / 131 val (val in all 6 manuals) | `2379469` test → `1598231` feat | `Tasks/P5 - Training-pair builder.md` |
 
 ## Phase 4: Single-agent RAG baseline
 
