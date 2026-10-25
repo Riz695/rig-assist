@@ -126,6 +126,28 @@ def test_extracts_several_citations_in_one_bracket() -> None:
     ]
 
 
+def test_a_bare_page_reuses_the_document_named_before_it_in_the_same_bracket() -> None:
+    # Seen from Qwen3.6 on 2026-10-25: "[drilling-manual p.14, p.63]".
+    assert extract_citations("Both [drilling-manual p.14, p.63].") == [
+        ("drilling-manual", 14),
+        ("drilling-manual", 63),
+    ]
+    assert extract_citations("[bop-manual p.1; p.2; safety-manual p.3, p.4]") == [
+        ("bop-manual", 1),
+        ("bop-manual", 2),
+        ("safety-manual", 3),
+        ("safety-manual", 4),
+    ]
+
+
+def test_a_bare_page_without_a_document_is_not_a_citation() -> None:
+    assert extract_citations("See [p.63] and [p. 7].") == []
+
+
+def test_the_document_does_not_carry_over_to_the_next_bracket() -> None:
+    assert extract_citations("[bop-manual p.12] then [p.13]") == [("bop-manual", 12)]
+
+
 def test_tolerates_a_space_after_p_dot() -> None:
     assert extract_citations("Weekly [bop-manual p. 12].") == [("bop-manual", 12)]
 
