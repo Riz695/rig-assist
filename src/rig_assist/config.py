@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from rig_assist.llm.usage import Prices
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -58,6 +60,9 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: SecretStr | None = None
+    # USD per 1M tokens, for the cost estimate in responses. Unset = cost unknown (null).
+    llm_input_price_per_1m: float | None = Field(default=None, ge=0)
+    llm_output_price_per_1m: float | None = Field(default=None, ge=0)
 
     # --- Tracing (optional) ---
     langfuse_public_key: str | None = None
@@ -67,6 +72,12 @@ class Settings(BaseSettings):
     @property
     def langfuse_enabled(self) -> bool:
         return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
+    @property
+    def llm_prices(self) -> "Prices | None":
+        if self.llm_input_price_per_1m is None or self.llm_output_price_per_1m is None:
+            return None
+        return Prices(self.llm_input_price_per_1m, self.llm_output_price_per_1m)
 
     @model_validator(mode="after")
     def _check_credentials(self) -> "Settings":
@@ -83,6 +94,13 @@ class Settings(BaseSettings):
         missing = [name for name, value in required[self.llm_provider] if not value]
         if missing:
             raise ValueError(f"LLM_PROVIDER={self.llm_provider} requires: {', '.join(missing)}")
+        prices = {
+            "LLM_INPUT_PRICE_PER_1M": self.llm_input_price_per_1m,
+            "LLM_OUTPUT_PRICE_PER_1M": self.llm_output_price_per_1m,
+        }
+        unset = [name for name, value in prices.items() if value is None]
+        if len(unset) == 1:
+            raise ValueError(f"Set both LLM prices or neither; missing: {unset[0]}")
         # The API key stays optional: a self-hosted vLLM server may not need one.
         if self.ocr_mode != "off" and not self.ocr_base_url:
             raise ValueError(f"OCR_MODE={self.ocr_mode} requires: OCR_BASE_URL")

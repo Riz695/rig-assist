@@ -21,6 +21,12 @@ from rig_assist.llm import (
     make_llm,
 )
 
+
+def make_settings(**overrides: Any) -> Settings:
+    """Settings from arguments only, ignoring the developer's .env."""
+    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+
+
 PROMPT = [
     Message("system", "Answer from the manuals only."),
     Message("user", "How often is the BOP tested?"),
@@ -206,13 +212,11 @@ def test_azure_requests_go_to_the_v1_path() -> None:
 
 
 def test_make_llm_defaults_to_the_fake() -> None:
-    assert isinstance(make_llm(Settings(_env_file=None)), FakeLlm)
+    assert isinstance(make_llm(make_settings()), FakeLlm)
 
 
 def test_make_llm_builds_an_openai_client() -> None:
-    settings = Settings(
-        _env_file=None, llm_provider="openai", llm_model="gpt-test", openai_api_key="sk-test"
-    )
+    settings = make_settings(llm_provider="openai", llm_model="gpt-test", openai_api_key="sk-test")
     llm = make_llm(settings)
     assert isinstance(llm, OpenAiLlm)
     assert llm.model == "gpt-test"
@@ -220,8 +224,7 @@ def test_make_llm_builds_an_openai_client() -> None:
 
 
 def test_make_llm_builds_an_azure_client_on_the_v1_endpoint() -> None:
-    settings = Settings(
-        _env_file=None,
+    settings = make_settings(
         llm_provider="azure",
         llm_model="my-deployment",
         azure_openai_endpoint="https://my-rig.openai.azure.com",
@@ -234,12 +237,12 @@ def test_make_llm_builds_an_azure_client_on_the_v1_endpoint() -> None:
 
 
 def test_settings_prices_are_unset_by_default() -> None:
-    settings = Settings(_env_file=None)
+    settings = make_settings()
     assert settings.llm_prices is None
 
 
 def test_settings_prices_need_both_values() -> None:
-    settings = Settings(_env_file=None, llm_input_price_per_1m=0.40, llm_output_price_per_1m=1.60)
+    settings = make_settings(llm_input_price_per_1m=0.40, llm_output_price_per_1m=1.60)
     assert settings.llm_prices == Prices(input_per_1m=0.40, output_per_1m=1.60)
     with pytest.raises(ValueError, match="LLM_OUTPUT_PRICE_PER_1M"):
-        Settings(_env_file=None, llm_input_price_per_1m=0.40)
+        make_settings(llm_input_price_per_1m=0.40)

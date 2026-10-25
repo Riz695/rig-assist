@@ -5,8 +5,8 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 3 (Evaluation), branch `phase-3-eval`. **Done; [PR #5](https://github.com/Riz695/rig-assist/pull/5) opened 2026-10-25, waiting for the user's review (never merge it yourself).** End-of-phase checks passed: `make lint` clean, `make test` 440 passed, CI green (lint, tests 3.11/3.12, docker). Served defaults: `/search` = `hybrid_rerank` with MiniLM-L6. Next after merge: Phase 4 (single-agent RAG baseline, `/ask`), then the answer eval.
-- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`).
+- **Current phase:** 4 (Single-agent RAG baseline), branch `phase-4-rag` (from `main` at `ad63769`). Teaching mode: last notes written `Tasks/P4 - LLM client layer.md`.
+- **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`). **Phase 3:** merged by the user on 2026-10-25 ([PR #5](https://github.com/Riz695/rig-assist/pull/5), merge commit `ad63769`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
 - **Blockers for Phase 1 (all resolved, kept for history):**
@@ -29,11 +29,13 @@ Running log of what's done, so any new session (or person) can pick up where the
 - ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
 - User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
 
-## Starting Phase 4 (for the next session)
+## Phase 4: Single-agent RAG baseline
 
-1. Check that PR #5 is merged (`gh pr view 5`). If it's still open, stop: Phase 4 starts only after the user merges.
-2. `git switch main && git pull`, then `git switch -c phase-4-rag`.
-3. Follow PLAN.md "Phase 4: Single-agent RAG baseline" (tests first: fake LLM, citations only from retrieved chunks, "not found" path, usage tracking).
+Branch `phase-4-rag`. Order of work: LLM layer → RAG pipeline (prompt, citation check, "not found") → `POST /ask` → measure the "not found" signal → answer eval (`run_answer_eval.py`, LLM judge; estimate the cost and ask first).
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
+| LLM layer: `LlmClient` protocol, `Message`/`Usage`/`LlmResponse`/`LlmError`, `FakeLlm` (scripted replies, records prompts, word-count usage, `FAKE_REPLY` default), `OpenAiLlm` (chat completions, `max_completion_tokens`, finish_reason/empty/HTTP errors → `LlmError`), `azure_base_url`, `make_llm`, `Prices`/`cost_usd`, `LLM_INPUT/OUTPUT_PRICE_PER_1M` | `413cf10` test → FEAT feat | `Tasks/P4 - LLM client layer.md` |
 
 Phase 3 findings Phase 4 depends on:
 - **Retrieval for `/ask`:** use the served default, `hybrid_rerank` (MiniLM-L6, 20 candidates): MRR@10 0.865, Hit@5 41/42, about 2 s per query on the laptop.
@@ -201,6 +203,8 @@ Open items to measure in Phase 3 (from Phase 2):
 - 2026-10-24: Bug fixed: the reranker variants (all `mode=hybrid_rerank`, `parser=pdfplumber`) had shown up as 5 extra rows in the committed parser comparison (`c02ed09`). The parser table now takes only plain mode configs by name.
 - 2026-10-24: **Oversized chunks** (user chose "convert, verify"). Analysis first: all 22 were on Marine pp. 126–144 (annex log sheets and blank forms); 78% of their bge tokens were HTML tags (worst: 770 tokens, 14 of them text); **no eval question touches those pages** (only q040, p24, is on any HTML-table page), so the frozen set can't show a gain. Fix: OCR HTML tables → Markdown in cleaning (OCR cache keeps raw output). Re-ingest (cache only, 4 min 50 s each): main 1,316 → **1,302 chunks, 0 over 512 (max 488)**; `olmocr_all` 1,273 → 1,220, 2 over (cds-guide p216 certificate form with `____` fill-in lines, 918 tokens; one prose chunk at 514): known gap, comparison index only. Eval (18 configs, 28.8 min, 4.25 GB): 12 of 18 configs unchanged on every question. **q040** (the only question on an HTML-table page) rank 1 → 2 in the three MiniLM configs (MRR 0.877 → 0.865; Hit@5 unchanged): the answer row is intact; MiniLM scores the same page −6.4 as Markdown vs −2.5 as HTML (−4.8 without the `---` row), a model quirk on one question. Not tuned further (would be tuning on the test set). `dense_qprefix`: q032 1 → 2. `olmocr_all`: 6 questions move, both ways, mostly deep ranks. **Net: oversized chunks gone, no measurable quality change** beyond one-question noise. MiniLM-L6 c20 is still the best reranker (0.865 vs bge-base 0.834, jina 0.863).
 - 2026-10-25: **Served defaults (user's choice: "rerank by default")**. `/search` default `mode` `bm25` → `hybrid_rerank`; `RERANKER_MODEL` `BAAI/bge-reranker-base` → `Xenova/ms-marco-MiniLM-L-6-v2` (better on every metric, ~4.5× faster); `EMBEDDING_QUERY_PREFIX` stays empty (no effect after reranking). Main-index numbers: hybrid_rerank (MiniLM, 20) Hit@1 33/42, Hit@5 41/42, MRR@10 0.865, p50 2.1 s (laptop, 12 threads); hybrid 0.804 / 0.08 s; bge-base c20 0.834 / 9.7 s. Consequences: a request without `mode` needs Qdrant (BM25 still works with `mode=bm25`); `/search` never returns an empty "no match" list in the default mode (dense always has nearest neighbours), "not found" is `/ask`'s job (Phase 4); Azure's 1–2 vCPUs will be slower than the laptop (unmeasured, Phase 8). Docker check: `/search` without `mode` → `hybrid_rerank`, 1.9 s warm, 3.0 s first call. Eval rerun at `2c8b51c`: 22.3 min (was 28.8; olmocr_all rerank now uses MiniLM), every number unchanged under the new names; `olmocr_all_hybrid_rerank` with MiniLM 0.871 vs main 0.865, within noise (parser decision unchanged). The user's `.env` `RERANKER_MODEL` line was changed with their decision (only that line).
+- 2026-10-25: **One `openai` client for OpenAI and Azure** (Microsoft Learn, "Azure OpenAI v1 API", updated 2026-06): `OpenAI(api_key=<azure key>, base_url="https://<resource>.openai.azure.com/openai/v1/")`, model = deployment name, no `api-version`, no `AzureOpenAI` class. Chat Completions (not the Responses API) so any OpenAI-compatible server works too. `max_completion_tokens` (reasoning models reject `max_tokens`); temperature not sent (some reasoning models only accept the default). SDK retries kept at 2 (no temperature trick needed, unlike OCR). Key auth only; Entra ID (token provider) left for Phase 8.
+- 2026-10-25: Cost = tokens × `LLM_INPUT/OUTPUT_PRICE_PER_1M` (set both or neither; unset → `null`, "unknown", not 0), so prices aren't hardcoded per model and don't go stale.
 - Branches created before PR #1 merges have no `.pre-commit-config.yaml`, so commits there need `PRE_COMMIT_ALLOW_NO_CONFIG=1` (Markdown-only changes).
 
 ## Docker Cloud Sandboxes credit
