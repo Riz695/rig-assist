@@ -9,6 +9,7 @@ from openai import DefaultHttpx2Client
 from rig_assist.config import Settings
 from rig_assist.llm import (
     FAKE_REPLY,
+    GEMINI_BASE_URL,
     FakeLlm,
     LlmError,
     LlmResponse,
@@ -244,6 +245,41 @@ def test_make_llm_builds_an_azure_client_on_the_v1_endpoint() -> None:
     assert isinstance(llm, OpenAiLlm)
     assert llm.model == "my-deployment"
     assert llm.base_url == "https://my-rig.openai.azure.com/openai/v1/"
+
+
+def test_make_llm_builds_a_gemini_client_on_its_openai_compatible_endpoint() -> None:
+    settings = make_settings(
+        llm_provider="gemini", llm_model="gemini-test", gemini_api_key="g-test", llm_max_retries=5
+    )
+    llm = make_llm(settings)
+    assert isinstance(llm, OpenAiLlm)
+    assert llm.model == "gemini-test"
+    assert llm.base_url == GEMINI_BASE_URL
+    assert llm.max_retries == 5
+
+
+def test_gemini_base_url_is_googles_openai_compatibility_endpoint() -> None:
+    assert GEMINI_BASE_URL == "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+
+def test_gemini_requests_go_to_the_chat_completions_path() -> None:
+    llm, sent = make_openai(
+        lambda _: httpx2.Response(200, json=completion("ok")), base_url=GEMINI_BASE_URL
+    )
+    llm.complete(PROMPT)
+    assert sent[0].url == (
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    )
+    assert sent[0].headers["authorization"] == "Bearer test-key"
+
+
+def test_every_real_provider_gets_the_configured_retries() -> None:
+    settings = make_settings(
+        llm_provider="openai", llm_model="gpt-test", openai_api_key="sk-test", llm_max_retries=4
+    )
+    llm = make_llm(settings)
+    assert isinstance(llm, OpenAiLlm)
+    assert llm.max_retries == 4
 
 
 def test_settings_prices_are_unset_by_default() -> None:

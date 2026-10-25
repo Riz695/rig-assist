@@ -52,7 +52,7 @@ def test_reads_values_from_env_file(tmp_path: Path) -> None:
 
 def test_unknown_llm_provider_is_rejected() -> None:
     with pytest.raises(ValidationError):
-        make_settings(llm_provider="gemini")
+        make_settings(llm_provider="cohere")
 
 
 def test_openai_provider_requires_api_key_and_model() -> None:
@@ -60,6 +60,20 @@ def test_openai_provider_requires_api_key_and_model() -> None:
         make_settings(llm_provider="openai", llm_model="some-model")
     with pytest.raises(ValidationError, match="LLM_MODEL"):
         make_settings(llm_provider="openai", openai_api_key="sk-test")
+
+
+def test_gemini_provider_requires_api_key_and_model() -> None:
+    with pytest.raises(ValidationError, match="GEMINI_API_KEY"):
+        make_settings(llm_provider="gemini", llm_model="gemini-test")
+    with pytest.raises(ValidationError, match="LLM_MODEL"):
+        make_settings(llm_provider="gemini", gemini_api_key="g-test")
+
+
+def test_llm_retries_default_to_two_and_cannot_be_negative() -> None:
+    assert make_settings().llm_max_retries == 2
+    assert make_settings(llm_max_retries=6).llm_max_retries == 6
+    with pytest.raises(ValidationError):
+        make_settings(llm_max_retries=-1)
 
 
 def test_azure_provider_requires_endpoint_and_key() -> None:
