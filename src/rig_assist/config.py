@@ -40,7 +40,9 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     # Prepended to search queries only (not chunks). "" = none, as v1 and fastembed.
     embedding_query_prefix: str = ""
-    reranker_model: str = "BAAI/bge-reranker-base"
+    # Best on the eval set (eval/results/retrieval.md) and ~4x faster on CPU than
+    # BAAI/bge-reranker-base (~2 s vs ~10 s per query for 20 candidates).
+    reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: SecretStr | None = None
     qdrant_collection: str = "rig_assist_chunks"

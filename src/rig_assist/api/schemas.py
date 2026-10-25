@@ -40,12 +40,13 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=1000, description="A question or keywords.")
     top_k: int = Field(default=5, ge=1, le=50, description="How many chunks to return.")
     mode: SearchMode = Field(
-        default="bm25",
+        default="hybrid_rerank",
         description=(
-            "Retrieval method. 'bm25': keyword match. 'dense': embedding similarity "
-            "(Qdrant). 'hybrid': both, fused by reciprocal rank fusion. 'hybrid_rerank': "
-            "hybrid's top 20 reordered by a cross-encoder (most accurate, slowest: "
-            "seconds per query on CPU). Every mode except 'bm25' needs Qdrant."
+            "Retrieval method. 'hybrid_rerank' (default): hybrid's top 20 reordered by a "
+            "cross-encoder; most accurate on the eval set, about 2 s per query on CPU. "
+            "'hybrid': BM25 and dense fused by reciprocal rank fusion (~0.1 s). 'dense': "
+            "embedding similarity. 'bm25': keyword match, the only mode that works "
+            "without Qdrant."
         ),
     )
 

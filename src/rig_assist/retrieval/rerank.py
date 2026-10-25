@@ -7,7 +7,8 @@ pass per (query, chunk) pair. So it only reranks the first stage's top `candidat
 
 Measured on this laptop's CPU (12 threads), 20 real chunks per query:
 `BAAI/bge-reranker-base` ~10.7 s, `Xenova/ms-marco-MiniLM-L-6-v2` ~2.4 s,
-`jinaai/jina-reranker-v1-tiny-en` ~2.0 s. Phase 3 measures what the extra time buys.
+`jinaai/jina-reranker-v1-tiny-en` ~2.0 s. On the eval set the big model bought nothing:
+MiniLM-L6 ranked best (MRR@10 0.865 vs 0.834), so it is the served default.
 """
 
 from dataclasses import replace

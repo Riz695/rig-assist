@@ -65,19 +65,18 @@ SCANNED_DOCS = frozenset({"marine-offshore-log-ops-manual"})
 SUBSETS = ("table", "scanned", "paraphrased", "manual_wording")
 VARIANT_CONFIGS = tuple(f"{variant}_{mode}" for variant in INDEX_VARIANTS for mode in SEARCH_MODES)
 # Reranker choice: other cross-encoders and candidate counts on the main index, next to
-# `hybrid_rerank` (settings.reranker_model, 20 candidates). Name → (model, candidates).
+# `hybrid_rerank` (the served one: settings.reranker_model, 20 candidates).
+# Name → (model, candidates).
 RERANK_VARIANTS: dict[str, tuple[str, int]] = {
     "hybrid_rerank_bge_base_c10": ("BAAI/bge-reranker-base", 10),
+    "hybrid_rerank_bge_base_c20": ("BAAI/bge-reranker-base", 20),
     "hybrid_rerank_minilm_c10": ("Xenova/ms-marco-MiniLM-L-6-v2", 10),
-    "hybrid_rerank_minilm_c20": ("Xenova/ms-marco-MiniLM-L-6-v2", 20),
     "hybrid_rerank_jina_tiny_c10": ("jinaai/jina-reranker-v1-tiny-en", 10),
     "hybrid_rerank_jina_tiny_c20": ("jinaai/jina-reranker-v1-tiny-en", 20),
 }
 # Query prefix: the same main-index configs with BGE's instruction before each query.
 PREFIX_SUFFIX = "_qprefix"
-PREFIX_CONFIGS = tuple(
-    f"{base}{PREFIX_SUFFIX}" for base in ("dense", "hybrid", "hybrid_rerank_minilm_c20")
-)
+PREFIX_CONFIGS = tuple(f"{base}{PREFIX_SUFFIX}" for base in ("dense", "hybrid", "hybrid_rerank"))
 ALL_CONFIGS = (
     *SEARCH_MODES,
     *RERANK_VARIANTS,
