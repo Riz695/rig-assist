@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from rig_assist.evaluation.eval_set import EvalQuestion
@@ -164,3 +166,21 @@ def test_eval_pages_never_become_positives_even_if_queries_exist() -> None:
 def test_queries_for_an_unknown_chunk_are_an_error() -> None:
     with pytest.raises(ValueError, match="bop::p99::c0"):
         build_pairs(CHUNKS, {"bop::p99::c0": ["Stale question?"]}, excluded=set())
+
+
+def test_write_pairs_splits_into_two_jsonl_files_in_order(tmp_path: Path) -> None:
+    import json
+
+    from rig_assist.training.make_pairs import write_pairs
+
+    many = {f"bop::p{p}::c0": [f"question about page {p}"] for p in range(1, 61)}
+    pairs = build_pairs([chunk("bop", p) for p in range(1, 61)], many, excluded=set(), seed=3)
+    counts = write_pairs(pairs, tmp_path / "pairs")
+    train = [
+        json.loads(line) for line in (tmp_path / "pairs" / "train.jsonl").read_text().splitlines()
+    ]
+    val = [json.loads(line) for line in (tmp_path / "pairs" / "val.jsonl").read_text().splitlines()]
+    assert counts == {"train": len(train), "val": len(val)}
+    assert len(train) + len(val) == 60
+    assert [row["query"] for row in train] == [p.query for p in pairs if p.split == "train"]
+    assert set(train[0]) == {"query", "chunk_id", "doc_id", "page", "positive", "split"}
