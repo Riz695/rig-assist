@@ -38,7 +38,7 @@ ingest-v1: ## Build the v1 baseline indexes (v1 parser + v1 retrieval on v2 page
 eval: ## Retrieval eval of every config → eval/results/retrieval.md + MLflow runs (needs Qdrant)
 	uv run --group eval python eval/run_retrieval_eval.py
 
-eval-answers: ## Answer the eval set with /ask's pipeline (real LLM from .env; resumes) → eval/results/answers.md
+eval-answers: ## Answer the eval set with /ask's pipeline, then LLM-judge the answers (real LLM from .env; resumes) → eval/results/answers.md
 	uv run --group eval python eval/run_answer_eval.py
 
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
