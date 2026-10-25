@@ -27,6 +27,8 @@ def test_defaults_run_offline() -> None:
     assert settings.data_raw_dir == Path("data/raw")
     assert settings.langfuse_enabled is False
     assert settings.embedding_query_prefix == ""  # v1 and fastembed use none
+    # Best reranker on the eval set and ~4x faster than bge-reranker-base on CPU.
+    assert settings.reranker_model == "Xenova/ms-marco-MiniLM-L-6-v2"
 
 
 def test_environment_variables_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
