@@ -21,7 +21,28 @@ Same procedure as the OCR run (`docs/ocr-gpu.md`); the lessons from it are built
 Prices: RunPod pricing page, 2026-10-25; check the console. **Estimate: about 1.5 h (setup
 ~30 min, mostly the 37.5 GB download; eval ~30–60 min) ≈ $1.10–1.60**, plus a few cents of disk.
 
-## Steps
+## Route used on 2026-10-25: create the pod through the RunPod MCP
+
+With the official RunPod Claude Code plugin (`claude plugin install runpod@runpod`, then
+`/mcp` → runpod → Sign in with Runpod; OAuth, no API key stored), Claude creates the pod with
+vLLM's official image, so there is no web terminal and no `pip install`:
+
+- **Stock first:** on 2026-10-25 Community Cloud had no 48 GB card; **Secure Cloud** had the
+  RTX 6000 Ada (LOW in US-IL-1, US-KS-2, US-WA-1) at **$0.99/h** (`list-gpu-types`,
+  `include: AVAILABILITY`, `product: POD`). Read both clouds: a cheap Community price means
+  nothing without stock.
+- **Pod:** `cloud: SECURE`, `gpu: {id: "NVIDIA RTX 6000 Ada Generation", minCudaVersion: "12.8"}`,
+  `image: vllm/vllm-openai:v0.31.0` (the image's CUDA is 12.9; a newer host driver is fine),
+  `entrypoint: ["vllm", "serve"]`, `cmd: [model, --host 0.0.0.0, --port 8000,
+  --max-model-len 32768, --reasoning-parser qwen3, --language-model-only]`,
+  `env: {VLLM_API_KEY: ...}`, `disk: 90`, `ports: ["8000/http"]`.
+- **Key:** generated on the laptop straight into `.env` (`LLM_API_KEY`) and passed as the
+  pod's `VLLM_API_KEY`. It does appear in that tool call: acceptable for a pod that is
+  terminated after the run. Use the manual steps below to keep a key out of any transcript.
+- **Boot:** the image was cached on the host; the 34.9 GiB of weights downloaded in 18 s.
+  Then step 5 below, then step 6.
+
+## Manual steps (web terminal)
 
 ### 1. Deploy the pod
 RunPod console → **Pods → Deploy**:
