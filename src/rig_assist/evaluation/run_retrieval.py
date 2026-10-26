@@ -84,7 +84,7 @@ PREFIX_CONFIGS = tuple(f"{base}{PREFIX_SUFFIX}" for base in ("dense", "hybrid", 
 # Embedder comparison: the main index's chunks embedded by another model, each in its own
 # collection (`embedder_collection`). Name → exported model folder under MODELS_DIR.
 # `base_fp32` is the base model exported like the fine-tuned one (fastembed's own copy is
-# int8-quantized), so base vs fine-tuned differ only in the weights.
+# fp16), so base vs fine-tuned differ only in the weights.
 EMBEDDER_VARIANTS: dict[str, str] = {
     "base_fp32": "finetuned/base/model-onnx",
     "ft": "finetuned/ft-inbatch-e3-s1/model-onnx",
@@ -406,7 +406,7 @@ def _embedder_comparison(results: Sequence[ConfigResult]) -> list[str]:
         "",
         "Main index (same chunks, same BM25 and reranker); only the embedding model differs, "
         "each with its own Qdrant collection. `base_fp32` = the base model exported to ONNX "
-        "like the fine-tuned one (the served copy is fastembed's int8-quantized file); `ft` "
+        "like the fine-tuned one (the served copy is fastembed's fp16 file); `ft` "
         "= the fine-tuned model. Better / worse: questions whose reciprocal rank went up / "
         "down vs the served embedder in the same mode; the sign test p is the chance of a "
         "split at least that uneven if the two were equally good (ties left out).",

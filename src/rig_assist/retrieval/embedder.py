@@ -1,6 +1,6 @@
 """Text → vector. The real model runs on CPU through fastembed (ONNX, no PyTorch).
 
-`BAAI/bge-small-en-v1.5` in fastembed 0.9: 384 dimensions, a 67 MB quantized ONNX file
+`BAAI/bge-small-en-v1.5` in fastembed 0.9: 384 dimensions, a 67 MB fp16 ONNX file
 downloaded from Hugging Face on first use, max 512 input tokens (longer text is cut).
 
 EMBEDDING_MODEL can also be a folder made by `training/export_onnx.py` (the fine-tuned
