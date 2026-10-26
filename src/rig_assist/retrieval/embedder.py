@@ -2,11 +2,22 @@
 
 `BAAI/bge-small-en-v1.5` in fastembed 0.9: 384 dimensions, a 67 MB quantized ONNX file
 downloaded from Hugging Face on first use, max 512 input tokens (longer text is cut).
+
+EMBEDDING_MODEL can also be a folder made by `training/export_onnx.py` (the fine-tuned
+model): `model.onnx`, the tokenizer files, and `fastembed.json` saying how to turn token
+vectors into one vector (pooling, normalization). It's registered with fastembed as a
+custom model and loaded from the folder: same runtime, no PyTorch in the API.
 """
 
+import hashlib
+import json
+from pathlib import Path
 from typing import Protocol
 
 from fastembed import TextEmbedding
+from fastembed.common.model_description import ModelSource, PoolingType
+
+FASTEMBED_SPEC = "fastembed.json"  # in an exported folder: dim, pooling, normalization, file
 
 # BAAI's suggested instruction for short queries that search longer passages (bge v1.5).
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
@@ -19,6 +30,34 @@ class Embedder(Protocol):
     def embed_passages(self, texts: list[str]) -> list[list[float]]: ...
 
     def embed_query(self, text: str) -> list[float]: ...
+
+
+def load_text_embedding(model_name: str, cache_dir: str | None = None) -> TextEmbedding:
+    """A fastembed model by name, or an exported model from a folder."""
+    folder = Path(model_name)
+    if not folder.is_dir():
+        return TextEmbedding(model_name=model_name, cache_dir=cache_dir)
+    spec_path = folder / FASTEMBED_SPEC
+    if not spec_path.exists():
+        raise ValueError(
+            f"{folder} has no {FASTEMBED_SPEC}: export it with training/export_onnx.py"
+        )
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    folder = folder.resolve()
+    path_hash = hashlib.sha256(str(folder).encode()).hexdigest()[:8]
+    name = f"local/{folder.name}-{path_hash}"  # unique per folder
+    registered = {m["model"].lower() for m in TextEmbedding.list_supported_models()}
+    if name.lower() not in registered:
+        TextEmbedding.add_custom_model(
+            model=name,
+            pooling=PoolingType(spec["pooling"]),
+            normalization=bool(spec["normalization"]),
+            # fastembed wants a source; `specific_model_path` below means it's never used.
+            sources=ModelSource(hf=name),
+            dim=int(spec["dim"]),
+            model_file=spec["model_file"],
+        )
+    return TextEmbedding(model_name=name, cache_dir=cache_dir, specific_model_path=str(folder))
 
 
 class FastEmbedEmbedder:
@@ -40,7 +79,7 @@ class FastEmbedEmbedder:
 
     def _load(self) -> TextEmbedding:
         if self._model is None:
-            self._model = TextEmbedding(model_name=self.model_name, cache_dir=self.cache_dir)
+            self._model = load_text_embedding(self.model_name, self.cache_dir)
         return self._model
 
     @property

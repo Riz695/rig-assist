@@ -39,6 +39,8 @@ eval = [
 # Exact pins, each at least two weeks old on 2026-10-26 (sentence-transformers 6.2.0 and
 # transformers 5.20.x were newer).
 train = [
+    "onnx==1.23.2",  # ONNX export (training/export_onnx.py): torch's exporter needs both
+    "onnxscript==0.7.2",
     "sentence-transformers[train]==6.1.0",
     "torch==2.14.1",
     "transformers>=5.19,<5.20",

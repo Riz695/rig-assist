@@ -2,7 +2,7 @@
 # so CI and humans run exactly the same commands. `make help` lists them.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev test test-slow lint format ingest ingest-olmocr ingest-v1 eval eval-answers pairs negatives train mlflow-ui up down
+.PHONY: help install dev test test-slow lint format ingest ingest-olmocr ingest-v1 eval eval-answers pairs negatives train export mlflow-ui up down
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -52,6 +52,9 @@ negatives: ## Hard negatives for the pairs (BM25 + base embedder, local, no LLM)
 
 train: ## Fine-tune the embedder on the mined pairs (CPU; MLflow run + registry) → data/models/finetuned/
 	uv run --group train --group eval python training/train_embedder.py
+
+export: ## ONNX export of a trained model for fastembed: make export MODEL=data/models/finetuned/<run>/model
+	uv run --group train python training/export_onnx.py $(MODEL)
 
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db
