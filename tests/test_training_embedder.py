@@ -140,5 +140,8 @@ def test_history_metrics_turn_the_trainer_log_into_stepped_mlflow_metrics() -> N
 
 
 def test_history_metrics_skip_entries_without_a_step_and_non_numbers() -> None:
-    history = [{"loss": 1.0}, {"note": "text", "flag": True, "loss": 0.5, "step": 3}]
+    history: list[dict[str, object]] = [
+        {"loss": 1.0},
+        {"note": "text", "flag": True, "loss": 0.5, "step": 3},
+    ]
     assert history_metrics(history) == [("loss", 0.5, 3)]

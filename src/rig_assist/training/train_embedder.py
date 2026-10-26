@@ -15,15 +15,17 @@ against every trainable chunk). The frozen eval set is not looked at here: it is
 test (`eval/results/finetune.md`), and choosing a checkpoint on it would leak it.
 
 torch and sentence-transformers live in the `train` dependency group and MLflow in `eval`,
-so they are imported inside `fit` and `main`; the data preparation is plain Python.
+so they are imported inside `fit` and `log_run`; the data preparation is plain Python.
+A run writes a self-contained folder (`run.json` + `model/`); `log_run` records it in
+MLflow, locally right after training, or later (`--log-run DIR`) for a run on a rented GPU.
 """
 
 import argparse
 import json
-import os
+import shutil
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -104,18 +106,37 @@ def ir_eval_data(
     return queries, corpus, relevant
 
 
+def history_metrics(history: Sequence[Mapping[str, Any]]) -> list[tuple[str, float, int]]:
+    """(name, value, step) for every number in the trainer's log, for MLflow's curves.
+
+    MLflow metric names can't hold "@", so "mrr@10" becomes "mrr_at_10".
+    """
+    metrics = []
+    for entry in history:
+        if "step" not in entry:
+            continue
+        for key, value in entry.items():
+            if key in ("step", "epoch") or isinstance(value, bool):
+                continue
+            if isinstance(value, int | float):
+                metrics.append((key.replace("@", "_at_"), float(value), int(entry["step"])))
+    return metrics
+
+
 def fit(
     config: TrainConfig,
     rows: Sequence[MinedPair],
     pool: Sequence[Chunk],
     out_dir: Path,
     max_steps: int = -1,
-    report_to: str = "none",
-) -> dict[str, float]:
-    """Train, keep the best epoch by validation MRR@10, save it to `out_dir`.
+) -> tuple[dict[str, float], list[dict[str, Any]]]:
+    """Train, keep the best epoch by validation MRR@10, save it to `out_dir / "model"`.
 
-    Returns the validation metrics of the base model (`base_*`) and the saved one.
+    Returns the validation metrics of the base model (`base_*`) and of the saved one, and
+    the trainer's log history (loss every 10 steps, validation metrics every epoch).
+    Runs on a GPU when torch sees one, else on the CPU.
     """
+    import torch
     from datasets import Dataset
     from sentence_transformers.base.sampler import BatchSamplers
     from sentence_transformers.sentence_transformer import (
@@ -142,6 +163,7 @@ def fit(
     )
     base = {f"base_{k}": float(v) for k, v in evaluator(model).items()}
 
+    full_run = max_steps < 0
     args = SentenceTransformerTrainingArguments(
         output_dir=str(out_dir / "checkpoints"),
         num_train_epochs=config.epochs,
@@ -151,14 +173,14 @@ def fit(
         warmup_steps=config.warmup_ratio,  # a float below 1 is a ratio in Transformers v5
         seed=config.seed,
         batch_sampler=BatchSamplers.NO_DUPLICATES,
-        eval_strategy="epoch" if max_steps < 0 else "no",
-        save_strategy="epoch" if max_steps < 0 else "no",
+        eval_strategy="epoch" if full_run else "no",
+        save_strategy="epoch" if full_run else "no",
         save_total_limit=1,
-        load_best_model_at_end=max_steps < 0,
+        load_best_model_at_end=full_run,
         metric_for_best_model="eval_val_cosine_mrr@10",
         logging_steps=10,
-        report_to=report_to,
-        use_cpu=True,
+        report_to="none",  # logged to MLflow afterwards (`log_run`), also after a remote run
+        use_cpu=not torch.cuda.is_available(),
     )
     trainer = SentenceTransformerTrainer(
         model=model,
@@ -170,7 +192,40 @@ def fit(
     trainer.train()
     final = {k: float(v) for k, v in evaluator(model).items()}
     model.save_pretrained(str(out_dir / "model"))
-    return {**base, **final}
+    shutil.rmtree(out_dir / "checkpoints", ignore_errors=True)  # the best one is saved above
+    return {**base, **final}, list(trainer.state.log_history)
+
+
+def log_run(run_dir: Path, tracking_uri: str, artifact_root: Path) -> str:
+    """Record a finished run folder in MLflow and register its model; returns the run id.
+
+    The folder holds `run.json` (name, config, data stats, metrics, log history) and
+    `model/`, so a run trained on a rented GPU is logged the same way as a local one.
+    """
+    from rig_assist.evaluation.tracking import MlflowTracker
+
+    MlflowTracker(tracking_uri, "embedder-training", artifact_root)  # experiment + backend
+    import mlflow
+
+    record = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    with mlflow.start_run(run_name=record["name"]) as run:
+        mlflow.log_params({**record["config"], **record["data"]})
+        mlflow.log_metrics({k.replace("@", "_at_"): v for k, v in record["metrics"].items()})
+        mlflow.log_metric("train_seconds", record["train_seconds"])
+        for name, value, step in history_metrics(record["history"]):
+            mlflow.log_metric(name, value, step=step)
+        mlflow.log_dict(record, "run.json")
+        mlflow.log_artifacts(str(run_dir / "model"), "model")
+    # The files are registered directly: `mlflow.register_model("runs:/...")` in MLflow 3
+    # wants a LoggedModel (a model flavor), and plain files are what fastembed will load.
+    client = mlflow.MlflowClient()
+    if not client.search_registered_models(filter_string=f"name = '{REGISTERED_NAME}'"):
+        client.create_registered_model(REGISTERED_NAME)
+    version = client.create_model_version(
+        REGISTERED_NAME, source=f"{run.info.artifact_uri}/model", run_id=run.info.run_id
+    )
+    print(f"MLflow run {run.info.run_id}, registered {REGISTERED_NAME} v{version.version}")
+    return str(run.info.run_id)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -178,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--questions", type=Path, default=Path("eval/questions.jsonl"))
     parser.add_argument("--mined-dir", type=Path, default=Path("data/training/mined"))
     parser.add_argument("--out-dir", type=Path, default=None, help="default: data/models/...")
+    parser.add_argument("--name", default=None, help="run name (default: a timestamp)")
     parser.add_argument("--epochs", type=int, default=TrainConfig.epochs)
     parser.add_argument("--batch-size", type=int, default=TrainConfig.batch_size)
     parser.add_argument("--mini-batch-size", type=int, default=TrainConfig.mini_batch_size)
@@ -185,9 +241,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=TrainConfig.seed)
     parser.add_argument("--no-hard-negatives", action="store_true")
     parser.add_argument("--max-steps", type=int, default=-1, help="for a timing run")
-    parser.add_argument("--no-tracking", action="store_true")
+    parser.add_argument("--no-tracking", action="store_true", help="train only (e.g. on a pod)")
+    parser.add_argument("--log-run", type=Path, default=None, help="only log a run folder")
     args = parser.parse_args(argv)
     settings = get_settings()
+    if args.log_run is not None:
+        log_run(args.log_run, settings.mlflow_tracking_uri, settings.mlflow_artifact_dir)
+        return 0
 
     config = TrainConfig(
         epochs=args.epochs,
@@ -208,52 +268,32 @@ def main(argv: list[str] | None = None) -> int:
         if line.strip()
     ]
     pool = trainable_chunks(IndexStore(settings.data_index_dir).chunks(), eval_pages(questions))
-    name = time.strftime("bge-small-ft-%Y%m%d-%H%M%S")
+    name = args.name or time.strftime("bge-small-ft-%Y%m%d-%H%M%S")
     out_dir = args.out_dir or settings.models_dir / "finetuned" / name
     n_rows = len(train_columns(rows, config.hard_negatives)["anchor"])
     print(f"{n_rows} training rows, {len(pool)} chunks in the validation corpus -> {out_dir}")
 
-    tracking = not args.no_tracking and args.max_steps < 0
-    run: Any = None
-    if tracking:
-        from rig_assist.evaluation.tracking import MlflowTracker
-
-        MlflowTracker(
-            settings.mlflow_tracking_uri, "embedder-training", settings.mlflow_artifact_dir
-        )
-        import mlflow
-
-        # The Trainer's MLflow callback logs the loss curve and per-epoch metrics into the
-        # active run; this run adds the config, the data stats, and the model itself.
-        os.environ["MLFLOW_FLATTEN_PARAMS"] = "1"
-        run = mlflow.start_run(run_name=name)
-        stats = json.loads((args.mined_dir / "stats.json").read_text())
-        mlflow.log_params({**config.params(), "train_rows": str(n_rows)})
-        mlflow.log_dict(stats, "mined_stats.json")
-
     started = time.perf_counter()
-    try:
-        metrics = fit(
-            config,
-            rows,
-            pool,
-            out_dir,
-            max_steps=args.max_steps,
-            report_to="mlflow" if tracking else "none",
-        )
-    finally:
-        if run is not None and sys.exc_info()[0] is not None:
-            mlflow.end_run(status="FAILED")
+    metrics, history = fit(config, rows, pool, out_dir, max_steps=args.max_steps)
     seconds = time.perf_counter() - started
-    print(json.dumps({**metrics, "train_seconds": round(seconds, 1)}, indent=2))
+    record = {
+        "name": name,
+        "config": config.params(),
+        "data": {
+            "train_rows": str(n_rows),
+            "val_queries": str(sum(r.split == "val" for r in rows)),
+            "val_corpus": str(len(pool)),
+        },
+        "mined_stats": json.loads((args.mined_dir / "stats.json").read_text()),
+        "metrics": metrics,
+        "train_seconds": round(seconds, 1),
+        "history": history,
+    }
+    (out_dir / "run.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({**metrics, "train_seconds": record["train_seconds"]}, indent=2))
 
-    if run is not None:
-        mlflow.log_metrics({k.replace("@", "_at_"): v for k, v in metrics.items()})
-        mlflow.log_metric("train_seconds", seconds)
-        mlflow.log_artifacts(str(out_dir / "model"), "model")
-        version = mlflow.register_model(f"runs:/{run.info.run_id}/model", REGISTERED_NAME)
-        mlflow.end_run()
-        print(f"MLflow run {run.info.run_id}, registered {REGISTERED_NAME} v{version.version}")
+    if not args.no_tracking and args.max_steps < 0:
+        log_run(out_dir, settings.mlflow_tracking_uri, settings.mlflow_artifact_dir)
     return 0
 
 
