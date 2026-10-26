@@ -4055,6 +4055,8 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "fastembed" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "openai" },
     { name = "pdfplumber" },
     { name = "pydantic-settings" },
@@ -4082,6 +4084,7 @@ eval = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.156.4" },
     { name = "fastembed", specifier = ">=0.9.0" },
+    { name = "numpy", specifier = ">=2.4" },
     { name = "openai", specifier = ">=3.28.0,<4" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },

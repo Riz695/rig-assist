@@ -2,7 +2,7 @@
 # so CI and humans run exactly the same commands. `make help` lists them.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev test lint format ingest ingest-olmocr ingest-v1 eval eval-answers pairs mlflow-ui up down
+.PHONY: help install dev test lint format ingest ingest-olmocr ingest-v1 eval eval-answers pairs negatives mlflow-ui up down
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -43,6 +43,9 @@ eval-answers: ## Answer the eval set with /ask's pipeline, then LLM-judge the an
 
 pairs: ## Fine-tuning data: LLM-written queries per chunk (real LLM from .env; resumes) → data/training/pairs/
 	uv run python training/make_pairs.py
+
+negatives: ## Hard negatives for the pairs (BM25 + base embedder, local, no LLM) → data/training/mined/
+	uv run python training/mine_negatives.py
 
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db
