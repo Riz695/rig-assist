@@ -71,6 +71,13 @@ nohup vllm serve Qwen/Qwen3.6-35B-A3B-FP8 --port 8000 --max-model-len 32768 \
 - `--reasoning-parser qwen3`: the model thinks before answering (`<think>…</think>`); the parser
   moves that out of the answer text, so citations are checked on the answer only.
 - `--language-model-only`: skips the vision encoder (we send text), leaving more GPU memory.
+- `--default-chat-template-kwargs '{"enable_thinking": false}'` (used for `make pairs`, Phase 5): turns
+  thinking off server-side for bulk generation that doesn't need it. Output fell to 41–79 tokens
+  per call and 1,160 query requests took 2.5 min at 16 in flight. Leave it off for `/ask` and the
+  judge, which were measured with thinking on.
+- Boot time varies by host: 4 min on a host that had compiled the model before, 7.5 min on a fresh
+  one (`torch.compile` + CUDA graph capture). A 502 from the proxy during that time is normal;
+  read the pod log before assuming a failure.
 - Copy the key and its 8-character fingerprint. Watch startup with `tail -n 20 ~/vllm.log`; the
   first start downloads 37.5 GB. Ready at `Application startup complete`.
 

@@ -15,7 +15,6 @@ stopped run resumes and a changed prompt never mixes with old verdicts.
 """
 
 import json
-import re
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -27,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 from rig_assist.evaluation.answer_eval import AnswerRecord
 from rig_assist.evaluation.eval_set import EvalQuestion, NonEmptyStr
 from rig_assist.llm import LlmClient, Message, Usage
+from rig_assist.llm.json_reply import parse_json_object
 
 # The judge prompt is part of the method: changing it changes `judge_prompt_sha256` in the
 # run config, so old verdicts are not reused and MLflow shows which prompt scored a run.
@@ -66,7 +66,6 @@ JUDGE_MAX_TOKENS = 4096
 
 Score = Annotated[StrictInt, Field(ge=0, le=2)]  # StrictInt: "2", 2.0 and true are rejected
 Outcome = Literal["judged", "refused", "correct_refusal", "unparseable"]
-_FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
 
 class Verdict(BaseModel):
@@ -95,14 +94,10 @@ def judge_messages(question: EvalQuestion, record: AnswerRecord) -> list[Message
 
 def parse_verdict(text: str) -> Verdict:
     """The reply as a Verdict; a ```json fence around the object is tolerated."""
-    stripped = text.strip()
-    fenced = _FENCE.match(stripped)
     try:
-        data = json.loads(fenced.group(1) if fenced else stripped)
-    except json.JSONDecodeError as error:
-        raise VerdictError(f"not JSON ({error.msg})") from error
-    if not isinstance(data, dict):
-        raise VerdictError("not a JSON object")
+        data = parse_json_object(text)
+    except ValueError as error:
+        raise VerdictError(str(error)) from error
     try:
         return Verdict.model_validate(data)
     except ValidationError as error:

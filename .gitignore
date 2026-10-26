@@ -27,6 +27,7 @@ data/index/
 data/parsed/
 data/mlflow/
 data/eval/
+data/training/
 *.sqlite
 *.db
 

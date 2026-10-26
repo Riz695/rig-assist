@@ -2,7 +2,7 @@
 # so CI and humans run exactly the same commands. `make help` lists them.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev test lint format ingest ingest-olmocr ingest-v1 eval eval-answers mlflow-ui up down
+.PHONY: help install dev test test-slow lint format ingest ingest-olmocr ingest-v1 eval eval-answers pairs negatives train export export-base mlflow-ui up down
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -16,6 +16,9 @@ dev: ## Run the API locally with auto-reload on http://localhost:8000
 
 test: ## Run the test suite
 	uv run pytest
+
+test-slow: ## Slow tests only (train group, real models: ONNX export parity)
+	uv run --group train pytest -m slow
 
 lint: ## Lint, check formatting, and type-check (no files are changed)
 	uv run ruff check .
@@ -35,11 +38,27 @@ ingest-olmocr: ## Build the olmOCR-for-every-page index (parser comparison), fro
 ingest-v1: ## Build the v1 baseline indexes (v1 parser + v1 retrieval on v2 pages) for Phase 3
 	uv run python -m rig_assist.v1_baseline
 
-eval: ## Retrieval eval of every config → eval/results/retrieval.md + MLflow runs (needs Qdrant)
+eval: ## Retrieval eval of every config → eval/results/retrieval.md, finetune.md + MLflow runs (needs Qdrant; make export-base first)
 	uv run --group eval python eval/run_retrieval_eval.py
 
 eval-answers: ## Answer the eval set with /ask's pipeline, then LLM-judge the answers (real LLM from .env; resumes) → eval/results/answers.md
 	uv run --group eval python eval/run_answer_eval.py
+
+pairs: ## Fine-tuning data: LLM-written queries per chunk (real LLM from .env; resumes) → data/training/pairs/
+	uv run python training/make_pairs.py
+
+negatives: ## Hard negatives for the pairs (BM25 + base embedder, local, no LLM) → data/training/mined/
+	uv run python training/mine_negatives.py
+
+train: ## Fine-tune the embedder on the mined pairs (CPU; MLflow run + registry) → data/models/finetuned/
+	uv run --group train --group eval python training/train_embedder.py
+
+export: ## ONNX export of a trained model for fastembed: make export MODEL=data/models/finetuned/<run>/model
+	uv run --group train python training/export_onnx.py $(MODEL)
+
+export-base: ## The base embedder exported like a fine-tuned one (fp32), for make eval's base_fp32 rows
+	uv run --group train python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5').save_pretrained('data/models/finetuned/base/model')"
+	uv run --group train python training/export_onnx.py data/models/finetuned/base/model
 
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db

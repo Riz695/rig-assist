@@ -5,6 +5,7 @@ an expected page. That makes the metrics independent of the parser and the chunk
 pipelines that cut the same manual into different chunks are compared fairly.
 """
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import NamedTuple
@@ -98,3 +99,19 @@ def refusal_metrics(cases: Sequence[RefusalCase], threshold: float) -> RefusalRe
         else:
             counts["tn" if case.answerable else "fn"] += 1
     return RefusalResult(counts["tp"], counts["fp"], counts["fn"], counts["tn"])
+
+
+def sign_test(better: int, worse: int) -> float:
+    """Two-sided exact sign test: how likely a split at least this uneven is by chance.
+
+    Paired comparison of two retrievers on the same questions: `better` and `worse` count
+    the questions where one beats the other; ties are left out. Under "no real
+    difference" each changed question goes either way with probability 1/2.
+    """
+    if better < 0 or worse < 0:
+        raise ValueError("counts must not be negative")
+    n = better + worse
+    if n == 0:
+        return 1.0
+    tail = sum(math.comb(n, i) for i in range(min(better, worse) + 1)) / 2**n
+    return min(1.0, 2 * tail)
