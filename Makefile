@@ -2,7 +2,7 @@
 # so CI and humans run exactly the same commands. `make help` lists them.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev test lint format ingest ingest-olmocr ingest-v1 eval eval-answers pairs negatives train mlflow-ui up down
+.PHONY: help install dev test test-slow lint format ingest ingest-olmocr ingest-v1 eval eval-answers pairs negatives train mlflow-ui up down
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -16,6 +16,9 @@ dev: ## Run the API locally with auto-reload on http://localhost:8000
 
 test: ## Run the test suite
 	uv run pytest
+
+test-slow: ## Slow tests only (train group, real models: ONNX export parity)
+	uv run --group train pytest -m slow
 
 lint: ## Lint, check formatting, and type-check (no files are changed)
 	uv run ruff check .
