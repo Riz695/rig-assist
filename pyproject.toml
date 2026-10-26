@@ -34,6 +34,23 @@ dev = [
 eval = [
     "mlflow==3.17.0",
 ]
+# Fine-tuning the embedder (`make train`): PyTorch CPU wheels (no CUDA, ~200 MB instead of
+# several GB) + sentence-transformers. Never installed in the API image or CI.
+# Exact pins, each at least two weeks old on 2026-10-26 (sentence-transformers 6.2.0 and
+# transformers 5.20.x were newer).
+train = [
+    "sentence-transformers[train]==6.1.0",
+    "torch==2.14.1",
+    "transformers>=5.19,<5.20",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true  # only packages mapped above come from here
 
 [build-system]
 requires = ["uv_build>=0.13.3,<0.14.0"]
