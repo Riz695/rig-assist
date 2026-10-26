@@ -49,7 +49,9 @@ def export_onnx(model_dir: Path, out_dir: Path) -> dict[str, Any]:
 
     spec = fastembed_spec(model_dir)
     model = SentenceTransformer(str(model_dir), device="cpu")
-    transformer = model[0].auto_model.eval()
+    # Any: nn.Module's __getattr__ types sub-modules as "Tensor | Module".
+    transformer: Any = model[0].auto_model
+    transformer.eval()
 
     class TokenVectors(torch.nn.Module):
         """The transformer with plain tensor inputs and one output, as fastembed expects."""
