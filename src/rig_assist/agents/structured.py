@@ -1,10 +1,12 @@
 """Ask the LLM for a JSON object and validate it against a Pydantic model.
 
-An invalid reply (not JSON, or failing validation) gets one retry: the reply and what was
+An invalid reply (not JSON, failing validation, or failing the caller's `check`, e.g. a
+number outside the list it refers to) gets one retry: the reply and what was
 wrong with it go back to the model. A second invalid reply raises StructuredOutputError,
 carrying the reply and the tokens spent, so the caller can fail the job with a reason.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -45,15 +47,22 @@ def _describe(error: ValidationError) -> str:
     return "; ".join(parts)
 
 
-def _parse(text: str, model: type[T]) -> T:
+def _parse(text: str, model: type[T], check: Callable[[T], None] | None) -> T:
     try:
-        return model.model_validate(parse_json_object(text))
+        value = model.model_validate(parse_json_object(text))
     except ValidationError as error:
         raise ValueError(_describe(error)) from error
+    if check is not None:
+        check(value)  # raises ValueError with what's wrong
+    return value
 
 
 def complete_structured(
-    llm: LlmClient, messages: list[Message], model: type[T], max_tokens: int = 1024
+    llm: LlmClient,
+    messages: list[Message],
+    model: type[T],
+    max_tokens: int = 1024,
+    check: Callable[[T], None] | None = None,
 ) -> Structured[T]:
     """The reply as a `model`; one retry on an invalid reply. LLM errors propagate."""
     usage = Usage()
@@ -61,7 +70,7 @@ def complete_structured(
         response = llm.complete(messages, max_tokens=max_tokens)
         usage += response.usage
         try:
-            return Structured(_parse(response.text, model), usage, attempt)
+            return Structured(_parse(response.text, model, check), usage, attempt)
         except ValueError as error:
             problem = str(error)
             messages = [

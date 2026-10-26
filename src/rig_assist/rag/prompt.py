@@ -28,7 +28,8 @@ def citation_label(doc_id: str, page: int) -> str:
     return f"[{doc_id} p.{page}]"
 
 
-def _block(hit: ScoredChunk) -> str:
+def context_block(hit: ScoredChunk) -> str:
+    """One retrieved chunk under the label the model must cite it by."""
     chunk = hit.chunk
     source = chunk.doc_title + (f", {chunk.section}" if chunk.section else "")
     return f"{citation_label(chunk.doc_id, chunk.page)} ({source})\n{chunk.text}"
@@ -36,6 +37,6 @@ def _block(hit: ScoredChunk) -> str:
 
 def build_messages(question: str, hits: list[ScoredChunk]) -> list[Message]:
     """System rules, then the context blocks in retrieval order and the question."""
-    context = "\n\n".join(_block(hit) for hit in hits)
+    context = "\n\n".join(context_block(hit) for hit in hits)
     user = f"Context:\n\n{context}\n\nQuestion: {question}"
     return [Message("system", SYSTEM_PROMPT), Message("user", user)]

@@ -74,6 +74,11 @@ class TriageResult(_Strict):
     open_questions: list[Text]  # critical information missing; non-empty = ask, don't guess
 
 
+class SearchPlan(_Strict):
+    queries: list[Text]  # new searches; only the first few are run
+    done: StrictBool  # the evidence is enough
+
+
 class ProposedCause(_Strict):
     cause: Text
     likelihood: Likelihood
