@@ -38,6 +38,7 @@ from rig_assist.evaluation.run_retrieval import (
 from rig_assist.ingestion.models import Chunk
 from rig_assist.ingestion.store import DocumentInfo, IndexStore
 from rig_assist.ingestion.variants import INDEX_VARIANTS, variant_collection
+from rig_assist.retrieval.models import ScoredChunk
 
 # --- sign test ---------------------------------------------------------------
 
@@ -140,7 +141,7 @@ def test_prepare_runs_before_the_warm_up_query() -> None:
     retriever = ScriptedRetriever(DENSE.results)
     original = retriever.search
 
-    def search(query: str, k: int) -> list:  # type: ignore[type-arg]
+    def search(query: str, k: int) -> list[ScoredChunk]:
         order.append("search")
         return original(query, k)
 

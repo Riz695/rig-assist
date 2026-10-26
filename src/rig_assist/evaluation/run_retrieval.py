@@ -5,8 +5,10 @@ rerankers and candidate counts on the main index (`RERANK_VARIANTS`), main-index
 with BGE's query prefix (`PREFIX_CONFIGS`), the same
 modes on each index variant (`olmocr_all_<mode>`, for the parser comparison; see
 `rig_assist.ingestion.variants`), and the two v1 baselines on their own indexes (see
-`rig_assist.v1_baseline`). Every number in the report has a tracked run with the same
-params (git commit, eval-set hash, index contents).
+`rig_assist.v1_baseline`), and the main index re-embedded by other models
+(`<embedder>_<mode>`, Phase 5: the fine-tuned embedder vs the base one). Every number
+in the report has a tracked run with the same params (git commit, eval-set hash, index
+contents).
 """
 
 import argparse
@@ -19,12 +21,13 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date
+from functools import partial
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from rig_assist.config import Settings, get_settings
 from rig_assist.evaluation.eval_set import EvalQuestion, load_eval_set, load_reference_pages
-from rig_assist.evaluation.metrics import RefusalResult, refusal_metrics
+from rig_assist.evaluation.metrics import RefusalResult, refusal_metrics, sign_test
 from rig_assist.evaluation.retrieval_eval import (
     CONTEXT_K,
     RESULTS_K,
@@ -37,6 +40,7 @@ from rig_assist.evaluation.retrieval_eval import (
 )
 from rig_assist.evaluation.tracking import MlflowTracker, NullTracker, Tracker
 from rig_assist.ingestion.cache import PageCache
+from rig_assist.ingestion.models import Chunk
 from rig_assist.ingestion.store import IndexStore
 from rig_assist.ingestion.variants import (
     INDEX_VARIANTS,
@@ -77,12 +81,23 @@ RERANK_VARIANTS: dict[str, tuple[str, int]] = {
 # Query prefix: the same main-index configs with BGE's instruction before each query.
 PREFIX_SUFFIX = "_qprefix"
 PREFIX_CONFIGS = tuple(f"{base}{PREFIX_SUFFIX}" for base in ("dense", "hybrid", "hybrid_rerank"))
+# Embedder comparison: the main index's chunks embedded by another model, each in its own
+# collection (`embedder_collection`). Name → exported model folder under MODELS_DIR.
+# `base_fp32` is the base model exported like the fine-tuned one (fastembed's own copy is
+# int8-quantized), so base vs fine-tuned differ only in the weights.
+EMBEDDER_VARIANTS: dict[str, str] = {
+    "base_fp32": "finetuned/base/model-onnx",
+    "ft": "finetuned/ft-inbatch-e3-s1/model-onnx",
+}
+EMBEDDER_MODES: tuple[SearchMode, ...] = ("dense", "hybrid", "hybrid_rerank")
+EMBEDDER_CONFIGS = tuple(f"{v}_{mode}" for v in EMBEDDER_VARIANTS for mode in EMBEDDER_MODES)
 ALL_CONFIGS = (
     *SEARCH_MODES,
     *RERANK_VARIANTS,
     *PREFIX_CONFIGS,
     *VARIANT_CONFIGS,
     *V1_CONFIGS,
+    *EMBEDDER_CONFIGS,
 )
 # The `parser` param: the main index uses pdfplumber wherever there is a text layer
 # (olmOCR only for pages without one); a variant's parser is in its name.
@@ -98,6 +113,8 @@ class EvalConfig:
     # Called once the config is done, so its models don't stay in memory for the rest of
     # the run (they reload on next use). Without it, a full run held every model at once.
     unload: Callable[[], None] | None = None
+    # Called before the config runs (e.g. to fill its Qdrant collection).
+    prepare: Callable[[], object] | None = None
 
 
 @dataclass
@@ -142,6 +159,8 @@ def run_configs(
     out = []
     for config in configs:
         logger.info("Evaluating %s", config.name)
+        if config.prepare is not None:
+            config.prepare()
         config.retriever.search(
             WARM_UP_QUERY, RESULTS_K
         )  # model loading isn't a question's latency
@@ -217,6 +236,7 @@ def render_report(results: Sequence[ConfigResult], title: str, notes: Sequence[s
     lines += _parser_comparison(results)
     lines += _reranker_comparison(results)
     lines += _prefix_comparison(results)
+    lines += _embedder_comparison(results)
     lines += [
         "",
         '## Refusal ("not found")',
@@ -289,7 +309,9 @@ def _reranker_comparison(results: Sequence[ConfigResult]) -> list[str]:
     main = [
         r
         for r in results
-        if r.params.get("parser", MAIN_PARSER) == MAIN_PARSER and not r.params.get("query_prefix")
+        if r.params.get("parser", MAIN_PARSER) == MAIN_PARSER
+        and not r.params.get("query_prefix")
+        and "embedder_variant" not in r.params
     ]
     reranked = [r for r in main if "reranker_model" in r.params]
     if len(reranked) < 2:
@@ -347,7 +369,101 @@ def _prefix_comparison(results: Sequence[ConfigResult]) -> list[str]:
     return lines
 
 
+def paired_counts(result: ConfigResult, baseline: ConfigResult) -> tuple[int, int, int]:
+    """(better, worse, same): questions where `result`'s reciprocal rank (MRR@10's
+    per-question term) is higher, lower or equal than `baseline`'s."""
+    if [r.id for r in result.results] != [r.id for r in baseline.results]:
+        raise ValueError(f"{result.name} and {baseline.name} answered different questions")
+
+    def reciprocal(rank: int | None) -> float:
+        return 1 / rank if rank is not None and rank <= RESULTS_K else 0.0
+
+    better = worse = 0
+    for a, b in zip(result.results, baseline.results, strict=True):
+        better += reciprocal(a.rank) > reciprocal(b.rank)
+        worse += reciprocal(a.rank) < reciprocal(b.rank)
+    return better, worse, len(result.results) - better - worse
+
+
+def _served(r: ConfigResult) -> bool:
+    """A main-index config with the served embedder and no query prefix."""
+    return r.name in EMBEDDER_MODES and "embedder_variant" not in r.params
+
+
+def finetune_rows(results: Sequence[ConfigResult]) -> list[ConfigResult]:
+    """The rows of `finetune.md`: the served embedder's modes and every embedder variant."""
+    return [r for r in results if _served(r) or "embedder_variant" in r.params]
+
+
+def _embedder_comparison(results: Sequence[ConfigResult]) -> list[str]:
+    """Per mode: the served embedder, then each variant with a paired comparison to it."""
+    variants = [r for r in results if "embedder_variant" in r.params]
+    if not variants:
+        return []
+    lines = [
+        "",
+        "## Embedder comparison",
+        "",
+        "Main index (same chunks, same BM25 and reranker); only the embedding model differs, "
+        "each with its own Qdrant collection. `base_fp32` = the base model exported to ONNX "
+        "like the fine-tuned one (the served copy is fastembed's int8-quantized file); `ft` "
+        "= the fine-tuned model. Better / worse: questions whose reciprocal rank went up / "
+        "down vs the served embedder in the same mode; the sign test p is the chance of a "
+        "split at least that uneven if the two were equally good (ties left out).",
+        "",
+        "| mode | embedder | Hit@1 | Hit@5 | MRR@10 | paraphrased Hit@5 | paraphrased MRR@10 "
+        "| manual wording Hit@5 | manual wording MRR@10 | p50 latency "
+        "| better / worse | sign test p |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    served = {r.name: r for r in results if _served(r)}
+    for mode in EMBEDDER_MODES:
+        base = served.get(mode)
+        rows = [r for r in variants if r.params.get("mode") == mode]
+        if base is None and not rows:
+            continue
+        for r in ([base] if base else []) + rows:
+            s = r.summaries["all"]
+            model = r.params.get("embedding_model", "default")
+            label = r.params.get("embedder_variant") or f"{model} (served)"
+            paired = "– | –"
+            if base is not None and r is not base:
+                better, worse, _ = paired_counts(r, base)
+                paired = f"{better} / {worse} | {sign_test(better, worse):.2f}"
+            cells = _subset_cells(r, ("paraphrased", "manual_wording"))
+            lines.append(
+                f"| {mode} | {label} | {_count(s.hit_at_1, s.n)} | {_count(s.hit_at_5, s.n)} "
+                f"| {s.mrr_at_10:.3f} | {cells} | {s.p50_latency_s:.3f} s | {paired} |"
+            )
+    return lines
+
+
 # --- Real configs (CLI) ----------------------------------------------------
+
+
+class _DenseSync(Protocol):
+    def count_document(self, doc_id: str) -> int: ...
+    def upsert_document(self, doc_id: str, chunks: list[Chunk]) -> None: ...
+
+
+def embedder_collection(base_collection: str, variant: str) -> str:
+    return f"{base_collection}__emb_{variant}"
+
+
+def sync_dense(store: IndexStore, dense: _DenseSync) -> list[str]:
+    """Embed every stored document whose point count in `dense` differs from its chunk
+    count (missing or out of date); returns their doc_ids. A document re-chunked to the
+    same count isn't detected: drop the collection to force a rebuild."""
+    by_doc: dict[str, list[Chunk]] = {}
+    for chunk in store.chunks():
+        by_doc.setdefault(chunk.doc_id, []).append(chunk)
+    synced = []
+    for doc_id, chunks in sorted(by_doc.items()):
+        if dense.count_document(doc_id) != len(chunks):
+            logger.info("Embedding %s (%d chunks)", doc_id, len(chunks))
+            dense.upsert_document(doc_id, chunks)
+            synced.append(doc_id)
+    return synced
 
 
 def _index_params(store: IndexStore) -> dict[str, str]:
@@ -449,6 +565,36 @@ def make_configs(settings: Settings, names: Sequence[str]) -> list[EvalConfig]:
                 configs.append(
                     EvalConfig(name_prefix + base + suffix, retriever, {**index_params, **params})
                 )
+    for embedder, model in EMBEDDER_VARIANTS.items():
+        modes = [mode for mode in EMBEDDER_MODES if f"{embedder}_{mode}" in names]
+        if not modes:
+            continue
+        store = IndexStore(settings.data_index_dir)
+        model_path = str(settings.models_dir / model)
+        collection = embedder_collection(settings.qdrant_collection, embedder)
+        dense = dense_index(
+            {
+                "embedding_model": model_path,
+                "qdrant_collection": collection,
+                "embedding_query_prefix": "",
+            }
+        )
+        index = SearchIndex(store, dense, cross_encoder)
+        params = {**common, **_index_params(store), "bm25_idf": "lucene", "parser": MAIN_PARSER}
+        params |= {"embedding_model": model_path, "embedder_variant": embedder}
+        params |= {"qdrant_collection": collection, "query_prefix": ""}
+        for mode in modes:
+            retriever, mode_params = _v2_config(
+                mode, index, settings.reranker_model, cross_encoder_for
+            )
+            configs.append(
+                EvalConfig(
+                    f"{embedder}_{mode}",
+                    retriever,
+                    {**params, **mode_params},
+                    prepare=partial(sync_dense, store, dense),
+                )
+            )
     for config in V1_CONFIGS:
         if config not in names:
             continue
@@ -478,6 +624,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", choices=ALL_CONFIGS, action="append", help="repeatable")
     parser.add_argument("--questions", type=Path, default=Path("eval/questions.jsonl"))
     parser.add_argument("--out", type=Path, default=Path("eval/results/retrieval.md"))
+    parser.add_argument(
+        "--finetune-out",
+        type=Path,
+        default=Path("eval/results/finetune.md"),
+        help="the embedder comparison alone; written when an embedder config ran",
+    )
     parser.add_argument("--no-tracking", action="store_true", help="don't log to MLflow")
     args = parser.parse_args(argv)
     settings = get_settings()
@@ -526,6 +678,12 @@ def main(argv: list[str] | None = None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render_report(results, "Retrieval eval", notes), encoding="utf-8")
     print(f"Wrote {args.out}")
+    finetune = finetune_rows(results)
+    if any("embedder_variant" in r.params for r in finetune):
+        args.finetune_out.write_text(
+            render_report(finetune, "Fine-tuned embedder eval", notes), encoding="utf-8"
+        )
+        print(f"Wrote {args.finetune_out}")
     return 0
 
 
