@@ -196,8 +196,8 @@ def fit(
     return {**base, **final}, list(trainer.state.log_history)
 
 
-def log_run(run_dir: Path, tracking_uri: str, artifact_root: Path) -> str:
-    """Record a finished run folder in MLflow and register its model; returns the run id.
+def log_run(run_dir: Path, tracking_uri: str, artifact_root: Path, register: bool = True) -> str:
+    """Record a finished run folder in MLflow, optionally register its model; returns the id.
 
     The folder holds `run.json` (name, config, data stats, metrics, log history) and
     `model/`, so a run trained on a rented GPU is logged the same way as a local one.
@@ -216,6 +216,9 @@ def log_run(run_dir: Path, tracking_uri: str, artifact_root: Path) -> str:
             mlflow.log_metric(name, value, step=step)
         mlflow.log_dict(record, "run.json")
         mlflow.log_artifacts(str(run_dir / "model"), "model")
+    if not register:
+        print(f"MLflow run {run.info.run_id} (not registered)")
+        return str(run.info.run_id)
     # The files are registered directly: `mlflow.register_model("runs:/...")` in MLflow 3
     # wants a LoggedModel (a model flavor), and plain files are what fastembed will load.
     client = mlflow.MlflowClient()
@@ -243,10 +246,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-steps", type=int, default=-1, help="for a timing run")
     parser.add_argument("--no-tracking", action="store_true", help="train only (e.g. on a pod)")
     parser.add_argument("--log-run", type=Path, default=None, help="only log a run folder")
+    parser.add_argument("--register", action="store_true", help="with --log-run: register it")
     args = parser.parse_args(argv)
     settings = get_settings()
     if args.log_run is not None:
-        log_run(args.log_run, settings.mlflow_tracking_uri, settings.mlflow_artifact_dir)
+        log_run(
+            args.log_run,
+            settings.mlflow_tracking_uri,
+            settings.mlflow_artifact_dir,
+            register=args.register,
+        )
         return 0
 
     config = TrainConfig(
