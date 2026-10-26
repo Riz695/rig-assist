@@ -6,6 +6,7 @@ from rig_assist.ingestion.models import Chunk
 from rig_assist.training.negatives import MinedPair, write_mined
 from rig_assist.training.train_embedder import (
     TrainConfig,
+    history_metrics,
     ir_eval_data,
     load_mined,
     train_columns,
@@ -120,3 +121,24 @@ def test_the_mini_batch_only_changes_memory_not_the_batch() -> None:
     config = TrainConfig(batch_size=32, mini_batch_size=4)
     assert config.batch_size == 32  # in-batch negatives still come from all 32 rows
     assert config.mini_batch_size == 4
+
+
+def test_history_metrics_turn_the_trainer_log_into_stepped_mlflow_metrics() -> None:
+    history = [
+        {"loss": 2.1, "grad_norm": 5.0, "learning_rate": 1e-5, "epoch": 0.1, "step": 10},
+        {"eval_val_cosine_mrr@10": 0.62, "epoch": 1.0, "step": 96},
+        {"train_runtime": 80.5, "train_loss": 1.8, "epoch": 1.0, "step": 96},
+    ]
+    assert history_metrics(history) == [
+        ("loss", 2.1, 10),
+        ("grad_norm", 5.0, 10),
+        ("learning_rate", 1e-5, 10),
+        ("eval_val_cosine_mrr_at_10", 0.62, 96),
+        ("train_runtime", 80.5, 96),
+        ("train_loss", 1.8, 96),
+    ]
+
+
+def test_history_metrics_skip_entries_without_a_step_and_non_numbers() -> None:
+    history = [{"loss": 1.0}, {"note": "text", "flag": True, "loss": 0.5, "step": 3}]
+    assert history_metrics(history) == [("loss", 0.5, 3)]
