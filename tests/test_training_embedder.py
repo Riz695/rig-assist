@@ -97,10 +97,26 @@ def test_config_params_are_strings_for_mlflow() -> None:
     assert params["epochs"] == "2"
     assert params["batch_size"] == "16"
     assert params["base_model"] == "BAAI/bge-small-en-v1.5"
+    assert params["mini_batch_size"] == "8"
     assert all(isinstance(v, str) for v in params.values())
 
 
-@pytest.mark.parametrize("kwargs", [{"batch_size": 1}, {"epochs": 0}, {"learning_rate": 0.0}])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"batch_size": 1},
+        {"epochs": 0},
+        {"learning_rate": 0.0},
+        {"mini_batch_size": 0},
+        {"batch_size": 16, "mini_batch_size": 32},  # a mini-batch can't exceed the batch
+    ],
+)
 def test_invalid_config_is_rejected(kwargs: dict[str, float]) -> None:
     with pytest.raises(ValueError):
         TrainConfig(**kwargs)  # type: ignore[arg-type]
+
+
+def test_the_mini_batch_only_changes_memory_not_the_batch() -> None:
+    config = TrainConfig(batch_size=32, mini_batch_size=4)
+    assert config.batch_size == 32  # in-batch negatives still come from all 32 rows
+    assert config.mini_batch_size == 4
