@@ -5,7 +5,8 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 5 (Fine-tuning the retriever), branch `phase-5-finetune` (from `main` at `3ea8497`, the PR #6 merge). **All 6 tasks done; PR open for the user's review (don't merge).** Next: Phase 6 (LangGraph multi-agent) once the PR is merged. Teaching mode continues (explain each task, notes in Obsidian, wait for "continue").
+- **Current phase:** 6 (Multi-agent graph, LangGraph), branch `phase-6-agents` (from `main` at `05628b6`, the PR #7 merge). See "Phase 6" below for the order of work. Teaching mode continues (explain each task, notes in Obsidian, wait for "continue").
+- **Phase 5:** merged by the user on 2026-10-27 ([PR #7](https://github.com/Riz695/rig-assist/pull/7), merge commit `05628b6`).
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`). **Phase 3:** merged by the user on 2026-10-25 ([PR #5](https://github.com/Riz695/rig-assist/pull/5), merge commit `ad63769`). **Phase 4:** merged by the user on 2026-10-25 ([PR #6](https://github.com/Riz695/rig-assist/pull/6), merge commit `3ea8497`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
 - Done: RRF + `HybridRetriever`; dense retrieval (fastembed + Qdrant) + Qdrant in compose; dot-leader cleaning. Ingestion writes both indexes. Cross-encoder reranker (`RerankRetriever`). `/search` modes `bm25 | dense | hybrid | hybrid_rerank`; uploads write both indexes. v1 baseline configs (`make ingest-v1`). End-of-phase checks passed 2026-10-24.
@@ -28,6 +29,24 @@ Running log of what's done, so any new session (or person) can pick up where the
 - ✅ RRF fusion tests with deterministic fake rankings (`tests/test_hybrid.py`); idempotent ingestion in both indexes (`tests/test_pipeline.py`, `tests/test_api_documents.py`, `tests/test_v1_baseline.py`); mode dispatch with fakes (`tests/test_search_service.py`).
 - ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
 - User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
+
+## Phase 6: Multi-agent graph (LangGraph)
+
+Branch `phase-6-agents`. Order of work:
+1. **Tests first:** `WorkOrder` schema + validated structured LLM output with one retry.
+2. **Tests first:** deterministic merge: safety precedence (blocked actions never recommended), escalation rules, citation integrity (every citation maps to a retrieved chunk).
+3. Nodes: triage, retrieval (bounded multi-query), diagnosis, safety, report (fake LLM in tests).
+4. **Tests first:** LangGraph graph + routing (missing critical info → report with `open_questions`; else every node in order). langgraph pinned ≥ 2 weeks old.
+5. **Tests first:** SQLite job store + `POST /diagnose` (202 + job_id) / `GET /jobs/{id}`; lifecycle queued → running → done|failed, unknown id → 404.
+6. Tracing: check docs, choose Langfuse Cloud vs MLflow 3 tracing; optional (works without keys).
+7. Scenarios (`eval/scenarios.jsonl`, 15–20, ≥ 3 tempting an unsafe action) + `/ask` vs `/diagnose` comparison → `eval/results/agents.md`. **Estimate LLM cost and ask first.**
+8. Stretch: human-in-the-loop (interrupt + checkpointer, `needs_review`, `POST /jobs/{id}/approve`).
+
+Design decision (2026-10-27): the **report node is code, not an LLM call**. LLM nodes return small validated models; the `WorkOrder` is assembled deterministically, so safety precedence, escalation and citation integrity can't be broken by a model reply.
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
+| Schemas + structured output (`agents/schemas.py`, `agents/structured.py`): `Citation` (page ≥ 1), `Cause` (likelihood high/medium/low, evidence may be empty), `WorkOrder` (strict: extra fields forbidden, blank strings rejected, `StrictBool`; an action both recommended and blocked is invalid, case/space-insensitive). `complete_structured(llm, messages, Model)`: JSON (fence tolerated) → Pydantic; invalid → one retry with the reply and the field errors; second failure → `StructuredOutputError` (last reply + usage) | `298d3f3` test → `48bbdda` feat | `Tasks/P6 - Work order schema and structured output.md` |
 
 ## Phase 5: Fine-tuning the retriever
 
