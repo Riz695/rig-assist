@@ -1,11 +1,17 @@
 # Developer shortcuts. Every target is a thin wrapper around `uv run ...`,
 # so CI and humans run exactly the same commands. `make help` lists them.
 
+SHELL := /bin/bash  # nvm (for the UI's Node) only works in bash
 .DEFAULT_GOAL := help
-.PHONY: help install dev test test-slow lint format ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents pairs negatives train export export-base mlflow-ui up down
+.PHONY: help install dev test test-slow lint format ui-install ui-types ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents pairs negatives train export export-base mlflow-ui up down
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
+
+# The UI (ui/, React + TypeScript) uses Node from nvm when nvm is installed (a plain
+# `make` shell doesn't load ~/.bashrc); otherwise the node on PATH (CI: setup-node).
+NODE_ENV_SETUP := if [ -s "$$HOME/.nvm/nvm.sh" ]; then . "$$HOME/.nvm/nvm.sh" >/dev/null; fi;
+NPM := $(NODE_ENV_SETUP) npm --prefix ui
 
 install: ## Install dependencies and the git pre-commit hook
 	uv sync
@@ -28,6 +34,26 @@ lint: ## Lint, check formatting, and type-check (no files are changed)
 format: ## Auto-fix lint issues and format the code
 	uv run ruff check --fix .
 	uv run ruff format .
+
+ui-install: ## Install the UI's exact dependency versions from ui/package-lock.json
+	$(NPM) ci
+
+ui-types: ## After an API change: ui/openapi.json + its TypeScript types (ui/src/api/schema.d.ts)
+	uv run python -m rig_assist.api.openapi_export ui/openapi.json
+	$(NPM) run gen:types
+
+ui-dev: ## Run the UI with hot reload on http://localhost:5173 (calls the API from make dev)
+	$(NPM) run dev
+
+ui-test: ## Run the UI tests (Vitest, simulated browser, fake API)
+	$(NPM) test
+
+ui-lint: ## Lint (oxlint), check formatting (Prettier) and type-check (tsc) the UI
+	$(NPM) run lint
+	$(NPM) run typecheck
+
+ui-build: ## Production build of the UI → ui/dist/
+	$(NPM) run build
 
 ingest: ## Parse, chunk and index every PDF in data/raw/ (OCR per OCR_MODE in .env)
 	uv run python -m rig_assist.ingestion
@@ -66,7 +92,7 @@ export-base: ## The base embedder exported like a fine-tuned one (fp32), for mak
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db
 
-up: ## Build and start the stack in the background (API on http://localhost:8000/docs)
+up: ## Build and start the stack in the background (demo on http://localhost:8080, API docs on :8000/docs)
 	docker compose up --build --detach
 
 down: ## Stop the docker compose stack

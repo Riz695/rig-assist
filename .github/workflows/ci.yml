@@ -44,21 +44,64 @@ jobs:
       - run: uv sync --locked
       - run: make test
 
+  ui:
+    # The React + TypeScript UI: lint, format, type-check, tests, production build.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      # npm ci installs exactly what package-lock.json says, and fails if it is stale.
+      - run: npm ci
+      # The TypeScript types are generated from ui/openapi.json (pytest checks that file
+      # matches the API); regenerating must change nothing, or the commit is stale.
+      - run: npm run gen:types && git diff --exit-code -- src/api/schema.d.ts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   docker:
-    # Build the API image and check that the container starts and answers /health.
+    # Build the API and UI images; check both containers start, answer their health checks,
+    # run as non-root, and that the UI's nginx forwards /api to the API.
     # No push: publishing images comes with deployment (Phase 8).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker build -t rig-assist-api:ci .
-      - name: Start the container and wait for /health
+      - run: docker build -t rig-assist-ui:ci ui
+      # A shared network lets the UI reach the API by the name "api", as in docker compose.
+      - run: docker network create rig
+      - name: Start the API and wait for /health
         run: |
-          docker run -d --name api -p 8000:8000 rig-assist-api:ci
+          docker run -d --name api --network rig -p 8000:8000 rig-assist-api:ci
           for i in $(seq 30); do
             if curl -fsS http://localhost:8000/health; then exit 0; fi
             sleep 1
           done
           docker logs api
           exit 1
-      - name: Runs as a non-root user
-        run: test "$(docker exec api id -u)" != "0"
+      - name: Start the UI and wait for /healthz
+        run: |
+          docker run -d --name ui --network rig -p 8080:8080 rig-assist-ui:ci
+          for i in $(seq 30); do
+            if curl -fsS http://localhost:8080/healthz; then exit 0; fi
+            sleep 1
+          done
+          docker logs ui
+          exit 1
+      - name: The UI serves the app and proxies /api to the API
+        run: |
+          curl -fsS http://localhost:8080/ | grep -q "<title>Rig Assist</title>"
+          curl -fsS http://localhost:8080/api/health | grep -q '"status":"ok"'
+          curl -fsSI http://localhost:8080/ | grep -qi "content-security-policy"
+      - name: Both run as non-root users
+        run: |
+          test "$(docker exec api id -u)" != "0"
+          test "$(docker exec ui id -u)" != "0"

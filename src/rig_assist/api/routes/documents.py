@@ -1,7 +1,8 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import Path as PathParam
 from qdrant_client.http.exceptions import ResponseHandlingException
 
 from rig_assist.api.dependencies import get_app_settings, get_search_index, qdrant_unavailable
@@ -9,6 +10,7 @@ from rig_assist.api.schemas import DocumentList, DocumentResponse
 from rig_assist.config import Settings
 from rig_assist.ingestion.cache import PageCache
 from rig_assist.ingestion.files import write_bytes_atomic
+from rig_assist.ingestion.page_images import render_page_png
 from rig_assist.ingestion.parsers.olmocr import OcrFailedError
 from rig_assist.ingestion.pipeline import ingest_file, make_doc_id, make_ocr_client
 from rig_assist.ingestion.store import DocumentInfo
@@ -104,3 +106,36 @@ def upload_document(
         raise qdrant_unavailable(error) from error
     index.refresh()
     return _to_response(info)
+
+
+@router.get(
+    "/documents/{doc_id}/pages/{page}",
+    summary="One page of a manual as a PNG image (for citations)",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/png": {}}, "description": "The page, 1000 px wide."},
+        404: {"description": "Unknown document, page past the end, or the PDF is gone"},
+    },
+)
+def page_image(
+    doc_id: str,
+    page: Annotated[int, PathParam(ge=1, description="1-based page in the PDF.")],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+    index: Annotated[SearchIndex, Depends(get_search_index)],
+) -> Response:
+    """Render a cited page, so a reader can check the answer against the real manual."""
+    info = index.store.document(doc_id)
+    if info is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No document with ID {doc_id!r}.")
+    if page > info.pages:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"{doc_id!r} has {info.pages} pages; no page {page}."
+        )
+    pdf_path = settings.data_raw_dir / info.filename
+    if not pdf_path.is_file():
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"The PDF for {doc_id!r} is no longer on the server."
+        )
+    png = render_page_png(pdf_path, info.file_sha256, page)
+    # A page only changes when the manual is re-uploaded: let the browser keep it an hour.
+    return Response(png, media_type="image/png", headers={"Cache-Control": "max-age=3600"})

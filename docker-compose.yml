@@ -1,5 +1,5 @@
-# Local stack: `make up`, then open http://localhost:8000/docs. Stop with `make down`.
-# The Streamlit UI (Phase 7) joins this file later.
+# Local stack: `make up`, then open the demo at http://localhost:8080 (API docs at
+# http://localhost:8000/docs). Stop with `make down`.
 services:
   api:
     build: .
@@ -20,6 +20,19 @@ services:
       - ./data:/app/data
     depends_on:
       qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ui:
+    # React app served by nginx; /api/* is forwarded to the api service (one origin, no CORS).
+    build: ./ui
+    image: rig-assist-ui:local
+    ports:
+      - "8080:8080"
+    environment:
+      API_UPSTREAM: http://api:8000
+    depends_on:
+      api:
         condition: service_healthy
     restart: unless-stopped
 

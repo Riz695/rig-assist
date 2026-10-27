@@ -11,6 +11,10 @@ accumulates through a reducer. With a tracer, each node is a span, and the LLM a
 retriever are wrapped so every call and search is recorded under its node. Node errors
 (an LLM failure, two invalid replies) propagate out of `run`: the caller marks the job
 failed.
+
+Live progress: `run` streams LangGraph's "tasks" events (a node starts, a node finishes)
+and passes them to an optional `Progress` listener, so a job can show which node is
+running while the graph is still working.
 """
 
 import operator
@@ -78,6 +82,14 @@ class _NodeFn(Protocol):
     """LangGraph's node signature: the parameter must be named `state`."""
 
     def __call__(self, state: State) -> dict[str, Any]: ...
+
+
+class Progress(Protocol):
+    """Told about each node as it runs (e.g. the job store, for live progress)."""
+
+    def node_started(self, node: NodeName) -> None: ...
+
+    def node_finished(self, step: Step) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -186,10 +198,23 @@ class TroubleshootingGraph:
         graph.add_edge("report", END)
         return graph.compile()
 
-    def run(self, description: str, equipment_id: str | None = None) -> GraphResult:
-        state = self.graph.invoke(
-            {"description": description, "equipment_id": equipment_id, "steps": []}
-        )
+    def run(
+        self, description: str, equipment_id: str | None = None, progress: Progress | None = None
+    ) -> GraphResult:
+        inputs: State = {"description": description, "equipment_id": equipment_id, "steps": []}
+        state: State = inputs
+        # "tasks" events: one when a node starts (has "input"), one when it finishes (has
+        # "result"); "values" events: the whole state after each step (the last is final).
+        for mode, event in self.graph.stream(inputs, stream_mode=["tasks", "values"]):
+            if mode == "values":
+                state = event
+            elif progress is None:
+                continue
+            elif "input" in event:
+                progress.node_started(event["name"])
+            elif event.get("result") is not None:
+                [step] = event["result"]["steps"]  # each node appends exactly one Step
+                progress.node_finished(step)
         return GraphResult(
             work_order=state["work_order"],
             steps=state["steps"],

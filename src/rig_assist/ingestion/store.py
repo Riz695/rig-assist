@@ -66,6 +66,16 @@ class IndexStore:
             for path in sorted(folder.glob("*.json"))
         ]
 
+    def document(self, doc_id: str) -> DocumentInfo | None:
+        """One document, or None. Only a valid slug is looked up, so an id like '../x'
+        can never reach a file outside the store (path traversal)."""
+        if not _DOC_ID.match(doc_id):
+            return None
+        path = self._info_path(doc_id)
+        if not path.exists():
+            return None
+        return DocumentInfo(**json.loads(path.read_text(encoding="utf-8")))
+
     def chunks(self) -> list[Chunk]:
         """Every chunk of every stored document, in doc_id then file order."""
         chunks: list[Chunk] = []
