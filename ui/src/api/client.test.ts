@@ -103,3 +103,14 @@ describe('page images', () => {
     expect(pageImageUrl('a b/c', 1)).toBe('/api/documents/a%20b%2Fc/pages/1')
   })
 })
+
+test('the client uses whatever fetch is current at call time, not at creation', async () => {
+  const api = createApi({ baseUrl: BASE }) // no fetch given: the global one
+  const original = globalThis.fetch
+  globalThis.fetch = async () => json({ status: 'ok', version: 'patched' })
+  try {
+    expect(await api.health()).toEqual({ status: 'ok', version: 'patched' })
+  } finally {
+    globalThis.fetch = original
+  }
+})
