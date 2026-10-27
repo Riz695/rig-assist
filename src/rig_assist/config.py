@@ -70,10 +70,11 @@ class Settings(BaseSettings):
     llm_input_price_per_1m: float | None = Field(default=None, ge=0)
     llm_output_price_per_1m: float | None = Field(default=None, ge=0)
 
-    # --- Tracing (optional) ---
+    # --- Tracing (optional: Langfuse, on when both keys are set) ---
     langfuse_public_key: str | None = None
     langfuse_secret_key: SecretStr | None = None
-    langfuse_host: str = "https://cloud.langfuse.com"
+    # EU cloud by default; https://us.cloud.langfuse.com for the US region.
+    langfuse_base_url: str = "https://cloud.langfuse.com"
 
     @property
     def langfuse_enabled(self) -> bool:
@@ -112,6 +113,14 @@ class Settings(BaseSettings):
         unset = [name for name, value in prices.items() if value is None]
         if len(unset) == 1:
             raise ValueError(f"Set both LLM prices or neither; missing: {unset[0]}")
+        keys = {
+            "LANGFUSE_PUBLIC_KEY": self.langfuse_public_key,
+            "LANGFUSE_SECRET_KEY": self.langfuse_secret_key
+            and self.langfuse_secret_key.get_secret_value(),
+        }
+        missing_keys = [name for name, value in keys.items() if not value]
+        if len(missing_keys) == 1:
+            raise ValueError(f"Set both Langfuse keys or neither; missing: {missing_keys[0]}")
         # The API key stays optional: a self-hosted vLLM server may not need one.
         if self.ocr_mode != "off" and not self.ocr_base_url:
             raise ValueError(f"OCR_MODE={self.ocr_mode} requires: OCR_BASE_URL")

@@ -216,7 +216,9 @@ class JobResponse(BaseModel):
     status: JobStatus
     result: WorkOrder | None = Field(description="The work order, when status is 'done'.")
     error: str | None = Field(description="Why the job failed, when status is 'failed'.")
-    trace_url: str | None = Field(description="Link to the run's trace, when tracing is on.")
+    trace_url: str | None = Field(
+        description="Link to the run's trace in Langfuse, when tracing is on (LANGFUSE_* keys)."
+    )
     usage: JobUsage | None = Field(description="LLM usage, when status is 'done'.")
     steps: list[JobStep] = Field(description="Per node, in the order they ran.")
     created_at: str

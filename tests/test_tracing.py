@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import SecretStr
 from test_agent_graph import DESCRIPTION, DIAGNOSIS, PLAN_DONE, Retriever, safety, triage
 
 from rig_assist.agents.graph import TroubleshootingGraph
@@ -270,7 +271,7 @@ def test_make_tracer_uses_langfuse_when_both_keys_are_set(
     settings = Settings(  # type: ignore[call-arg]
         _env_file=None,
         langfuse_public_key="pk-lf-1",
-        langfuse_secret_key="sk-lf-1",
+        langfuse_secret_key=SecretStr("sk-lf-1"),
         langfuse_base_url="https://us.cloud.langfuse.com",
     )
     assert isinstance(make_tracer(settings), LangfuseTracer)

@@ -9,6 +9,7 @@ from rig_assist.api.dependencies import (
     get_job_store,
     get_llm,
     get_search_index,
+    get_tracer,
     qdrant_unavailable,
     searchable_retriever,
 )
@@ -17,6 +18,7 @@ from rig_assist.config import Settings
 from rig_assist.jobs import JobStore, run_job
 from rig_assist.llm import LlmClient
 from rig_assist.retrieval.service import SearchIndex, SearchMode
+from rig_assist.tracing import Tracer
 
 router = APIRouter(tags=["diagnose"])
 
@@ -39,6 +41,7 @@ def diagnose(
     llm: Annotated[LlmClient, Depends(get_llm)],
     jobs: Annotated[JobStore, Depends(get_job_store)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    tracer: Annotated[Tracer, Depends(get_tracer)],
 ) -> JobCreated:
     """Triage → retrieval → diagnosis → safety → work order, run in the background.
     The safety review overrides the diagnosis: blocked actions are never recommended.
@@ -48,8 +51,8 @@ def diagnose(
     except ResponseHandlingException as error:  # can't connect to Qdrant
         raise qdrant_unavailable(error) from error
     job = jobs.create(request.model_dump())
-    graph = TroubleshootingGraph(llm, retriever)
-    background.add_task(run_job, jobs, graph, job.id, settings.llm_prices)
+    graph = TroubleshootingGraph(llm, retriever, tracer=tracer)
+    background.add_task(run_job, jobs, graph, job.id, settings.llm_prices, tracer)
     return JobCreated(job_id=job.id, status=job.status, status_url=f"/jobs/{job.id}")
 
 
@@ -68,7 +71,7 @@ def get_job(job_id: str, jobs: Annotated[JobStore, Depends(get_job_store)]) -> J
             "status": job.status,
             "result": job.result,
             "error": job.error,
-            "trace_url": None,
+            "trace_url": job.trace_url,
             "usage": job.usage,
             "steps": job.steps,
             "created_at": job.created_at,

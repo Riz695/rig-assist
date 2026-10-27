@@ -14,6 +14,7 @@ from rig_assist.llm import LlmClient, make_llm
 from rig_assist.retrieval.dense import DenseIndex, make_dense_index
 from rig_assist.retrieval.rerank import CrossEncoder, FastEmbedCrossEncoder
 from rig_assist.retrieval.service import SearchIndex
+from rig_assist.tracing import Tracer, make_tracer
 
 
 def create_app(
@@ -21,6 +22,7 @@ def create_app(
     dense: DenseIndex | None = None,
     cross_encoder: CrossEncoder | None = None,
     llm: LlmClient | None = None,
+    tracer: Tracer | None = None,
 ) -> FastAPI:
     """Build a fresh app. Tests pass their own settings (temp folders) and fakes for the
     dense index, cross-encoder and LLM (default: the one LLM_PROVIDER names). The real
@@ -29,12 +31,14 @@ def create_app(
     """
     settings = settings or get_settings()
     jobs = JobStore(settings.job_db_path)
+    tracer = tracer or make_tracer(settings)  # off unless both Langfuse keys are set
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Jobs run inside this process: any left queued or running died with the last one.
         jobs.fail_unfinished()
         yield
+        tracer.flush()  # send the spans still buffered
 
     if dense is None:
         dense = make_dense_index(settings)
@@ -53,6 +57,7 @@ def create_app(
     )
     app.state.settings = settings
     app.state.jobs = jobs
+    app.state.tracer = tracer
     app.state.llm = llm if llm is not None else make_llm(settings)
     app.state.search_index = SearchIndex(
         IndexStore(settings.data_index_dir), dense=dense, cross_encoder=cross_encoder

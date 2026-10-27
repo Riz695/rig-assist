@@ -22,6 +22,7 @@ from typing import Any, Literal, Protocol, cast
 
 from rig_assist.agents.graph import GraphResult
 from rig_assist.llm.usage import Prices, cost_usd
+from rig_assist.tracing import NullTracer, Tracer
 
 JobStatus = Literal["queued", "running", "done", "failed"]
 INTERRUPTED = "Interrupted by a restart of the API before it finished. Submit it again."
@@ -37,9 +38,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     steps TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     started_at TEXT,
-    finished_at TEXT
+    finished_at TEXT,
+    trace_url TEXT
 )
 """
+# Columns added after the first version, for databases created before them.
+_ADDED_COLUMNS = {"trace_url": "TEXT"}
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,7 @@ class Job:
     created_at: str  # ISO 8601, UTC
     started_at: str | None
     finished_at: str | None
+    trace_url: str | None  # the run's trace, when tracing is on
 
 
 def _now() -> str:
@@ -76,6 +81,10 @@ class JobStore:
         try:
             with connection:  # commits, or rolls back on an exception
                 connection.execute(_SCHEMA)
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)")}
+                for name, kind in _ADDED_COLUMNS.items():
+                    if name not in columns:
+                        connection.execute(f"ALTER TABLE jobs ADD COLUMN {name} {kind}")
                 yield connection
         finally:
             connection.close()
@@ -93,6 +102,7 @@ class JobStore:
             created_at=row["created_at"],
             started_at=row["started_at"],
             finished_at=row["finished_at"],
+            trace_url=row["trace_url"],
         )
 
     def create(self, request: Mapping[str, Any]) -> Job:
@@ -143,6 +153,7 @@ class JobStore:
         result: Mapping[str, Any],
         usage: Mapping[str, Any],
         steps: list[dict[str, Any]],
+        trace_url: str | None = None,
     ) -> None:
         self._move(
             job_id,
@@ -152,10 +163,18 @@ class JobStore:
             usage=json.dumps(usage),
             steps=json.dumps(steps),
             finished_at=_now(),
+            trace_url=trace_url,
         )
 
-    def fail(self, job_id: str, error: str) -> None:
-        self._move(job_id, "failed", ("queued", "running"), error=error, finished_at=_now())
+    def fail(self, job_id: str, error: str, trace_url: str | None = None) -> None:
+        self._move(
+            job_id,
+            "failed",
+            ("queued", "running"),
+            error=error,
+            finished_at=_now(),
+            trace_url=trace_url,
+        )
 
     def fail_unfinished(self) -> int:
         """At startup: jobs queued or running were lost with the old process."""
@@ -171,21 +190,36 @@ class Graph(Protocol):
     def run(self, description: str, equipment_id: str | None = None) -> GraphResult: ...
 
 
-def run_job(store: JobStore, graph: Graph, job_id: str, prices: Prices | None = None) -> None:
-    """Run one job to the end. Never raises: any error is stored on the job."""
+def run_job(
+    store: JobStore,
+    graph: Graph,
+    job_id: str,
+    prices: Prices | None = None,
+    tracer: Tracer | None = None,
+) -> None:
+    """Run one job to the end, as one trace. Never raises: any error is stored on the job."""
     job = store.get(job_id)
     if job is None:
         raise ValueError(f"unknown job {job_id}")
+    tracer = tracer or NullTracer()
     store.start(job_id)
-    try:
-        result = graph.run(job.request["description"], job.request.get("equipment_id"))
-    except Exception as error:  # noqa: BLE001  any failure becomes the job's error
-        store.fail(job_id, f"{type(error).__name__}: {error}")
-        return
+    with tracer.observe(
+        "diagnose", "agent", input=job.request, metadata={"job_id": job_id}
+    ) as root:
+        trace_url = tracer.current_trace_url()
+        try:
+            result = graph.run(job.request["description"], job.request.get("equipment_id"))
+        except Exception as error:  # noqa: BLE001  any failure becomes the job's error
+            message = f"{type(error).__name__}: {error}"
+            root.update(level="ERROR", status_message=message)
+            store.fail(job_id, message, trace_url)
+            return
+        order = result.work_order.model_dump(mode="json")
+        root.update(output=order, usage=result.usage)
     usage = result.usage
     store.finish(
         job_id,
-        result.work_order.model_dump(mode="json"),
+        order,
         {
             "llm_calls": result.llm_calls,
             "input_tokens": usage.input_tokens,
@@ -201,4 +235,5 @@ def run_job(store: JobStore, graph: Graph, job_id: str, prices: Prices | None = 
             }
             for step in result.steps
         ],
+        trace_url,
     )
