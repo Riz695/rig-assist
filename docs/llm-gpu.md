@@ -113,7 +113,14 @@ make eval-answers          # resumes from saved answers if interrupted
 Then **Terminate** the pod in RunPod (a stopped pod still bills its disk) and log the hours and
 cost in `PROGRESS.md`.
 
-## Thinking on or off
+## Thinking on or off (`LLM_THINKING`)
+Since Phase 6 the app can switch thinking off per request, without restarting vLLM:
+`LLM_THINKING=off` in `.env` sends `chat_template_kwargs: {"enable_thinking": false}`
+(openai_compatible only). The agent comparison (`make eval-agents`) ran with it off: with
+thinking on, `/diagnose` nodes overran their 4,096-token output cap. The server-side
+restart below is the older alternative.
+
+### Older alternative: restart the server
 Qwen3.6 thinks by default. Thinking tokens count against `MAX_ANSWER_TOKENS` (4,096) and the
 RunPod proxy closes requests after 100 s. If answers get cut off (`finish_reason=length`) or
 time out (HTTP 524), restart the server with thinking off:
