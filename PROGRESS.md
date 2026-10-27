@@ -346,6 +346,7 @@ uv 0.13.3 · Python 3.12 (supports 3.11+) · fastapi 0.156.4 · starlette 1.9.0 
 - `hybrid_rerank` latency on Azure's 1–2 vCPUs is not measured yet (laptop: 2.1 s p50). Measure in Phase 8.
 - `olmocr_all` index: 2 chunks over 512 bge tokens (cds-guide p216 `____` fill-in lines, like the old dot leaders; one prose chunk at 514). Collapse underscore runs in cleaning if this index is ever served.
 - 2026-10-25: **Gemini API key (free tier) was pasted into the Claude chat** by the user (working remotely, no laptop access). Stored only in `.env` as `GEMINI_API_KEY` (gitignored, fingerprint sha256 `c2a0f16b5ac3`). **Rotated by the user on 2026-10-25** (old key dead).
+- 2026-10-27: Langfuse keys (EU cloud) were pasted into a Claude session by the user and put in `.env` (gitignored; never in a file in the repo). Rotate them in Langfuse if the transcript could be shared. The Langfuse MCP server is registered for this project at **local scope** (`~/.claude.json`, `claude mcp add --scope local …`, not `.mcp.json`), so Claude can read traces; first verified trace: a setup-check span.
 - 2026-10-24: The OCR API key (`OCR_API_KEY` in `.env`) was printed into a Claude session transcript by mistake (not in any file or commit). User advised to rotate it if the RunPod pod/key is still live.
 - Section labels are imperfect on some manuals (running headers like cds-guide's "Section 7 Definitions 1-7", headings wrapped over two lines). Header/footer stripping (from v1's parser) should fix the first.
 
