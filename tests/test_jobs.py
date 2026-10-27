@@ -125,8 +125,8 @@ class FakeGraph:
         if self.error:
             raise self.error
         steps = [
-            Step("triage", Usage(100, 20), 0.25),
-            Step("report", Usage(), 0.01),
+            Step("triage", Usage(100, 20), 0.25, llm_calls=1),
+            Step("report", Usage(), 0.01, llm_calls=0),
         ]
         return GraphResult(work_order=ORDER, steps=steps, hits=[], queries=[])
 

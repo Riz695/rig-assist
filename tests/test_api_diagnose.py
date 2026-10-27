@@ -169,7 +169,9 @@ def test_jobs_left_running_by_a_restart_are_failed_at_startup(tmp_path: Path) ->
     store = JobStore(tmp_path / "jobs.sqlite")
     job = store.create({"description": "x", "equipment_id": None})
     store.start(job.id)
-    client = client_for(tmp_path, [], index=False)  # a new app on the same database
-    response = client.get(f"/jobs/{job.id}").json()
+    dense = DenseIndex(QdrantClient(":memory:"), "test_chunks", KeywordEmbedder())
+    app = create_app(settings_for(tmp_path), dense=dense, cross_encoder=FakeCrossEncoder())
+    with TestClient(app) as client:  # runs the startup hook, as a restarted server would
+        response = client.get(f"/jobs/{job.id}").json()
     assert response["status"] == "failed"
     assert "restart" in response["error"]

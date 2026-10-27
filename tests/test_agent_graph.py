@@ -157,6 +157,15 @@ def test_each_step_records_its_usage_and_time() -> None:
     assert all(s.seconds == 1.0 for s in result.steps)
     assert result.steps[-1].usage.output_tokens == 0  # the report is code, not an LLM call
     assert sum(s.usage.output_tokens for s in result.steps) == result.usage.output_tokens
+    assert [s.llm_calls for s in result.steps] == [1, 1, 1, 1, 0]
+
+
+def test_retries_and_planner_rounds_count_as_llm_calls() -> None:
+    plan = json.dumps({"queries": ["liner wear"], "done": False})
+    replies = ["bad", triage(), plan, PLAN_DONE, DIAGNOSIS, safety()]
+    result = TroubleshootingGraph(FakeLlm(replies), Retriever()).run(DESCRIPTION)
+    assert [s.llm_calls for s in result.steps] == [2, 2, 1, 1, 0]
+    assert result.llm_calls == 6
 
 
 def test_the_queries_run_are_reported() -> None:
