@@ -7,6 +7,9 @@ Gemini has an OpenAI-compatible endpoint too (beta): GEMINI_BASE_URL with an AI 
 Any other OpenAI-compatible server (vLLM, a gateway) works the same way.
 """
 
+from collections.abc import Mapping
+from typing import Any
+
 import httpx2
 import openai
 
@@ -29,10 +32,12 @@ class OpenAiLlm:
         timeout: float = 120.0,  # Gemini's free tier took 97 s for one reply once
         max_retries: int = 2,  # the SDK retries 429/5xx/connection errors with backoff
         http_client: httpx2.Client | None = None,  # tests pass a mock transport here
+        extra_body: Mapping[str, Any] | None = None,  # server-specific request fields
     ) -> None:
         self.model = model
         self.base_url = base_url
         self.max_retries = max_retries
+        self.extra_body = extra_body
         self._client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -48,6 +53,7 @@ class OpenAiLlm:
                 messages=[{"role": m.role, "content": m.content} for m in messages],  # type: ignore[misc]
                 # Not max_tokens: reasoning models only accept max_completion_tokens.
                 max_completion_tokens=max_tokens,
+                extra_body=self.extra_body,
             )
         except openai.APIStatusError as error:
             raise LlmError(f"HTTP {error.status_code}: {error.message}") from error

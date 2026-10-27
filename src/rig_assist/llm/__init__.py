@@ -44,6 +44,11 @@ def make_llm(settings: "Settings") -> LlmClient:
             api_key=key,  # the SDK needs a value; a keyless server ignores it
             base_url=settings.llm_base_url,
             max_retries=settings.llm_max_retries,
+            extra_body=(
+                {"chat_template_kwargs": {"enable_thinking": False}}
+                if settings.llm_thinking == "off"
+                else None
+            ),
         )
     return FakeLlm()
 
