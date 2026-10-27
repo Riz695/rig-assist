@@ -8,9 +8,14 @@ workers would replace this: jobs survive restarts and workers scale independentl
 
 SQLite (standard library) is enough for one API process; each call opens its own
 connection, so FastAPI's worker threads can use the store at the same time.
+
+Live progress: while a job runs, the graph reports each node to the store, so
+`current_node` names the node working now and `steps` grows as nodes finish. A UI polling
+`GET /jobs/{id}` sees the graph advance. A failed job keeps the node it failed in.
 """
 
 import json
+import logging
 import sqlite3
 import uuid
 from collections.abc import Iterator, Mapping
@@ -20,9 +25,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
-from rig_assist.agents.graph import GraphResult
+from rig_assist.agents.graph import GraphResult, NodeName, Progress, Step
 from rig_assist.llm.usage import Prices, cost_usd
 from rig_assist.tracing import NullTracer, Tracer
+
+logger = logging.getLogger(__name__)
 
 JobStatus = Literal["queued", "running", "done", "failed"]
 INTERRUPTED = "Interrupted by a restart of the API before it finished. Submit it again."
@@ -39,11 +46,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at TEXT NOT NULL,
     started_at TEXT,
     finished_at TEXT,
-    trace_url TEXT
+    trace_url TEXT,
+    current_node TEXT
 )
 """
 # Columns added after the first version, for databases created before them.
-_ADDED_COLUMNS = {"trace_url": "TEXT"}
+_ADDED_COLUMNS = {"trace_url": "TEXT", "current_node": "TEXT"}
 
 
 @dataclass(frozen=True)
@@ -59,6 +67,7 @@ class Job:
     started_at: str | None
     finished_at: str | None
     trace_url: str | None  # the run's trace, when tracing is on
+    current_node: str | None  # the node working now; when failed, the one that failed
 
 
 def _now() -> str:
@@ -103,6 +112,7 @@ class JobStore:
             started_at=row["started_at"],
             finished_at=row["finished_at"],
             trace_url=row["trace_url"],
+            current_node=row["current_node"],
         )
 
     def create(self, request: Mapping[str, Any]) -> Job:
@@ -125,6 +135,30 @@ class JobStore:
         with self._connect() as db:
             rows = db.execute("SELECT * FROM jobs ORDER BY created_at, id").fetchall()
         return [self._job(row) for row in rows]
+
+    def _update_running(self, job_id: str, sql_set: str, params: tuple[Any, ...]) -> None:
+        """Apply `SET sql_set` only while the job is running (live progress)."""
+        with self._connect() as db:
+            updated = db.execute(
+                f"UPDATE jobs SET {sql_set} WHERE id = ? AND status = 'running'",
+                (*params, job_id),
+            ).rowcount
+        if updated == 0:
+            job = self.get(job_id)
+            current = "unknown" if job is None else job.status
+            raise ValueError(f"cannot record progress on job {job_id}: it is {current}")
+
+    def node_started(self, job_id: str, node: str) -> None:
+        self._update_running(job_id, "current_node = ?", (node,))
+
+    def node_finished(self, job_id: str, step: Mapping[str, Any]) -> None:
+        # json_insert(..., '$[#]', ...) appends to the JSON array inside SQLite, in one
+        # statement: no read-modify-write race with another writer.
+        self._update_running(
+            job_id,
+            "steps = json_insert(steps, '$[#]', json(?)), current_node = NULL",
+            (json.dumps(dict(step)),),
+        )
 
     def _move(
         self, job_id: str, to: JobStatus, allowed_from: tuple[JobStatus, ...], **fields: Any
@@ -164,6 +198,7 @@ class JobStore:
             steps=json.dumps(steps),
             finished_at=_now(),
             trace_url=trace_url,
+            current_node=None,
         )
 
     def fail(self, job_id: str, error: str, trace_url: str | None = None) -> None:
@@ -187,7 +222,40 @@ class JobStore:
 
 
 class Graph(Protocol):
-    def run(self, description: str, equipment_id: str | None = None) -> GraphResult: ...
+    def run(
+        self, description: str, equipment_id: str | None = None, progress: Progress | None = None
+    ) -> GraphResult: ...
+
+
+def step_json(step: Step) -> dict[str, Any]:
+    """A step as stored on the job and returned by the API."""
+    return {
+        "node": step.node,
+        "seconds": step.seconds,
+        "input_tokens": step.usage.input_tokens,
+        "output_tokens": step.usage.output_tokens,
+    }
+
+
+class _StoreProgress:
+    """Writes the graph's progress to the job. Progress is a nicety: a failed write
+    (e.g. the database is locked) is logged and the job carries on."""
+
+    def __init__(self, store: JobStore, job_id: str) -> None:
+        self.store = store
+        self.job_id = job_id
+
+    def node_started(self, node: NodeName) -> None:
+        try:
+            self.store.node_started(self.job_id, node)
+        except (sqlite3.Error, ValueError) as error:
+            logger.warning("job %s: progress not recorded: %s", self.job_id, error)
+
+    def node_finished(self, step: Step) -> None:
+        try:
+            self.store.node_finished(self.job_id, step_json(step))
+        except (sqlite3.Error, ValueError) as error:
+            logger.warning("job %s: progress not recorded: %s", self.job_id, error)
 
 
 def run_job(
@@ -208,7 +276,11 @@ def run_job(
     ) as root:
         trace_url = tracer.current_trace_url()
         try:
-            result = graph.run(job.request["description"], job.request.get("equipment_id"))
+            result = graph.run(
+                job.request["description"],
+                job.request.get("equipment_id"),
+                progress=_StoreProgress(store, job_id),
+            )
         except Exception as error:  # noqa: BLE001  any failure becomes the job's error
             message = f"{type(error).__name__}: {error}"
             root.update(level="ERROR", status_message=message)
@@ -226,14 +298,6 @@ def run_job(
             "output_tokens": usage.output_tokens,
             "cost_usd": cost_usd(usage, prices),
         },
-        [
-            {
-                "node": step.node,
-                "seconds": step.seconds,
-                "input_tokens": step.usage.input_tokens,
-                "output_tokens": step.usage.output_tokens,
-            }
-            for step in result.steps
-        ],
+        [step_json(step) for step in result.steps],
         trace_url,
     )

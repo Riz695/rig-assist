@@ -74,6 +74,7 @@ def get_job(job_id: str, jobs: Annotated[JobStore, Depends(get_job_store)]) -> J
             "trace_url": job.trace_url,
             "usage": job.usage,
             "steps": job.steps,
+            "current_node": job.current_node,
             "created_at": job.created_at,
             "started_at": job.started_at,
             "finished_at": job.finished_at,

@@ -220,7 +220,12 @@ class JobResponse(BaseModel):
         description="Link to the run's trace in Langfuse, when tracing is on (LANGFUSE_* keys)."
     )
     usage: JobUsage | None = Field(description="LLM usage, when status is 'done'.")
-    steps: list[JobStep] = Field(description="Per node, in the order they ran.")
+    steps: list[JobStep] = Field(
+        description="Per finished node, in the order they ran; grows while the job runs."
+    )
+    current_node: str | None = Field(
+        description="The node working now (running), or the one that failed (failed)."
+    )
     created_at: str
     started_at: str | None
     finished_at: str | None
