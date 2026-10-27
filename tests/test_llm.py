@@ -333,3 +333,46 @@ def test_settings_prices_need_both_values() -> None:
     assert settings.llm_prices == Prices(input_per_1m=0.40, output_per_1m=1.60)
     with pytest.raises(ValueError, match="LLM_OUTPUT_PRICE_PER_1M"):
         make_settings(llm_input_price_per_1m=0.40)
+
+
+# --- thinking switch (vLLM / Qwen: LLM_THINKING=off) ------------------------
+
+NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_extra_body_fields_are_sent_with_every_request() -> None:
+    sent: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        sent.append(request)
+        return httpx2.Response(200, json=completion("ok"))
+
+    llm = OpenAiLlm(
+        model="qwen",
+        api_key="k",
+        base_url="https://llm.example/v1",
+        max_retries=0,
+        http_client=DefaultHttpx2Client(transport=httpx2.MockTransport(handler)),
+        extra_body=NO_THINKING,
+    )
+    llm.complete(PROMPT)
+    assert json.loads(sent[0].content)["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_no_extra_body_by_default() -> None:
+    llm, sent = make_openai(lambda _: httpx2.Response(200, json=completion("ok")))
+    llm.complete(PROMPT)
+    assert "chat_template_kwargs" not in json.loads(sent[0].content)
+
+
+def test_llm_thinking_off_turns_thinking_off_on_an_openai_compatible_server() -> None:
+    base = {"llm_provider": "openai_compatible", "llm_model": "m", "llm_base_url": "http://x/v1"}
+    off = make_llm(make_settings(**base, llm_thinking="off"))
+    assert isinstance(off, OpenAiLlm) and off.extra_body == NO_THINKING
+    default = make_llm(make_settings(**base))
+    assert isinstance(default, OpenAiLlm) and default.extra_body is None
+
+
+def test_llm_thinking_off_is_refused_for_other_providers() -> None:
+    with pytest.raises(ValueError, match="LLM_THINKING"):
+        make_settings(llm_provider="openai", llm_model="m", openai_api_key="k", llm_thinking="off")

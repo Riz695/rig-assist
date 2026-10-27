@@ -59,7 +59,7 @@ class AskResult:
     retrieved: list[ScoredChunk] = field(default_factory=list)  # the context, for the eval
 
 
-def _snippet(text: str) -> str:
+def make_snippet(text: str) -> str:
     flat = " ".join(text.split())
     return flat if len(flat) <= SNIPPET_CHARS else flat[: SNIPPET_CHARS - 1] + "…"
 
@@ -138,7 +138,7 @@ class RagPipeline:
                 doc_id=doc_id,
                 doc_title=by_page[(doc_id, page)].chunk.doc_title,
                 page=page,
-                snippet=_snippet(by_page[(doc_id, page)].chunk.text),
+                snippet=make_snippet(by_page[(doc_id, page)].chunk.text),
             )
             for doc_id, page in (cited if reason is None else [])
         ]

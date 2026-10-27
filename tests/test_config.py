@@ -106,7 +106,8 @@ def test_secrets_are_hidden_when_printed() -> None:
 
 
 def test_langfuse_enabled_only_with_both_keys() -> None:
-    assert make_settings(langfuse_public_key="pk").langfuse_enabled is False
+    assert make_settings().langfuse_enabled is False
+    assert make_settings(langfuse_public_key="", langfuse_secret_key="").langfuse_enabled is False
     both = make_settings(langfuse_public_key="pk", langfuse_secret_key="sk")
     assert both.langfuse_enabled is True
 

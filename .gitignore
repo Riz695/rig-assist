@@ -28,6 +28,7 @@ data/parsed/
 data/mlflow/
 data/eval/
 data/training/
+data/jobs.sqlite*
 *.sqlite
 *.db
 
