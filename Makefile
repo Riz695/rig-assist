@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash  # nvm (for the UI's Node) only works in bash
 .DEFAULT_GOAL := help
-.PHONY: help install dev test test-slow lint format ui-install ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents pairs negatives train export export-base mlflow-ui up down
+.PHONY: help install dev test test-slow lint format ui-install ui-types ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents pairs negatives train export export-base mlflow-ui up down
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -37,6 +37,10 @@ format: ## Auto-fix lint issues and format the code
 
 ui-install: ## Install the UI's exact dependency versions from ui/package-lock.json
 	$(NPM) ci
+
+ui-types: ## After an API change: ui/openapi.json + its TypeScript types (ui/src/api/schema.d.ts)
+	uv run python -m rig_assist.api.openapi_export ui/openapi.json
+	$(NPM) run gen:types
 
 ui-dev: ## Run the UI with hot reload on http://localhost:5173 (calls the API from make dev)
 	$(NPM) run dev

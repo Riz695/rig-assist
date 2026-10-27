@@ -59,6 +59,9 @@ jobs:
           cache-dependency-path: ui/package-lock.json
       # npm ci installs exactly what package-lock.json says, and fails if it is stale.
       - run: npm ci
+      # The TypeScript types are generated from ui/openapi.json (pytest checks that file
+      # matches the API); regenerating must change nothing, or the commit is stale.
+      - run: npm run gen:types && git diff --exit-code -- src/api/schema.d.ts
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test

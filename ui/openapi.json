@@ -1,0 +1,1346 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Rig Assist API",
+    "description": "Troubleshooting assistant for oil & gas equipment. Not a safety-certified system: always follow site procedures.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness check",
+        "description": "Return 200 while the process is running. Used by Docker and Azure health probes.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "List indexed documents",
+        "operationId": "list_documents_documents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Upload and index a PDF manual",
+        "description": "Save the PDF to the raw folder, parse (OCR per OCR_MODE), chunk and index it\n(BM25 store and Qdrant).\n\nUploading the same file name again replaces that document. Runs synchronously:\na 250-page manual takes ~15 s to parse without OCR, plus ~0.2 s per chunk to embed.",
+        "operationId": "upload_document_documents_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_document_documents_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A different file already uses this doc_id"
+          },
+          "415": {
+            "description": "The file is not a PDF"
+          },
+          "502": {
+            "description": "OCR is configured but the OCR server failed"
+          },
+          "503": {
+            "description": "Qdrant is unreachable, so the document can't be indexed"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/{doc_id}/pages/{page}": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "One page of a manual as a PNG image (for citations)",
+        "description": "Render a cited page, so a reader can check the answer against the real manual.",
+        "operationId": "page_image_documents__doc_id__pages__page__get",
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Doc Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "1-based page in the PDF.",
+              "title": "Page"
+            },
+            "description": "1-based page in the PDF."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page, 1000 px wide.",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "404": {
+            "description": "Unknown document, page past the end, or the PDF is gone"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search the manuals",
+        "description": "Return the chunks that best match the query, with document, page and score.",
+        "operationId": "search_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing is indexed yet (or, for dense modes, not in Qdrant)"
+          },
+          "503": {
+            "description": "Qdrant is unreachable (dense modes only)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ask": {
+      "post": {
+        "tags": [
+          "ask"
+        ],
+        "summary": "Answer a question from the manuals, with citations",
+        "description": "Retrieve the best chunks, answer from them with one LLM call, and check that every\ncitation points to a retrieved page. Otherwise the answer is 'Not found in the manuals.'",
+        "operationId": "ask_ask_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing is indexed yet (or, for dense modes, not in Qdrant)"
+          },
+          "502": {
+            "description": "The LLM call failed"
+          },
+          "503": {
+            "description": "Qdrant is unreachable (dense modes only)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/diagnose": {
+      "post": {
+        "tags": [
+          "diagnose"
+        ],
+        "summary": "Start a troubleshooting job; poll GET /jobs/{job_id} for the work order",
+        "description": "Triage → retrieval → diagnosis → safety → work order, run in the background.\nThe safety review overrides the diagnosis: blocked actions are never recommended.",
+        "operationId": "diagnose_diagnose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnoseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing is indexed yet (or not in Qdrant)"
+          },
+          "503": {
+            "description": "Qdrant is unreachable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "diagnose"
+        ],
+        "summary": "Status and result of a /diagnose job",
+        "operationId": "get_job_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No job with this ID"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AskCitation": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id",
+            "examples": [
+              "drilling-manual"
+            ]
+          },
+          "doc_title": {
+            "type": "string",
+            "title": "Doc Title",
+            "examples": [
+              "Drilling Manual"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "1-based page in the PDF.",
+            "examples": [
+              36
+            ]
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "Start of the retrieved text on that page (up to 300 characters).",
+            "examples": [
+              "7.1 Causes of a Kick. A kick is an influx of formation fluid…"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc_id",
+          "doc_title",
+          "page",
+          "snippet"
+        ],
+        "title": "AskCitation"
+      },
+      "AskLatency": {
+        "properties": {
+          "retrieval_s": {
+            "type": "number",
+            "title": "Retrieval S"
+          },
+          "llm_s": {
+            "type": "number",
+            "title": "Llm S"
+          },
+          "total_s": {
+            "type": "number",
+            "title": "Total S"
+          }
+        },
+        "type": "object",
+        "required": [
+          "retrieval_s",
+          "llm_s",
+          "total_s"
+        ],
+        "title": "AskLatency"
+      },
+      "AskRequest": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Question",
+            "description": "A question in plain words."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "bm25",
+              "dense",
+              "hybrid",
+              "hybrid_rerank"
+            ],
+            "title": "Mode",
+            "description": "Retrieval method for the context, as in POST /search.",
+            "default": "hybrid_rerank"
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "description": "How many chunks the LLM gets as context.",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "title": "AskRequest",
+        "examples": [
+          {
+            "question": "What should I do when a kick is detected while drilling?"
+          }
+        ]
+      },
+      "AskResponse": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "bm25",
+              "dense",
+              "hybrid",
+              "hybrid_rerank"
+            ],
+            "title": "Mode"
+          },
+          "top_k": {
+            "type": "integer",
+            "title": "Top K"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer",
+            "description": "The answer with [doc-id p.N] citations, or 'Not found in the manuals.'"
+          },
+          "found": {
+            "type": "boolean",
+            "title": "Found",
+            "description": "False when the answer is 'Not found in the manuals.'"
+          },
+          "refusal_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_results",
+                  "not_relevant",
+                  "llm_not_found",
+                  "no_citations",
+                  "invalid_citation"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal Reason",
+            "description": "Why the answer is 'not found': no_results (retrieval found nothing), not_relevant (the chunks didn't pass the relevance check), llm_not_found (the LLM said the context doesn't answer it), no_citations or invalid_citation (the answer cited nothing, or a page that wasn't retrieved).",
+            "examples": [
+              null
+            ]
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/AskCitation"
+            },
+            "type": "array",
+            "title": "Citations",
+            "description": "One per cited page, in the order the answer cites them."
+          },
+          "usage": {
+            "$ref": "#/components/schemas/AskUsage"
+          },
+          "latency": {
+            "$ref": "#/components/schemas/AskLatency"
+          },
+          "disclaimer": {
+            "type": "string",
+            "title": "Disclaimer",
+            "default": "Rig Assist is not a safety-certified system. Check every answer against the cited manual pages and follow site procedures and your permit-to-work system."
+          }
+        },
+        "type": "object",
+        "required": [
+          "question",
+          "mode",
+          "top_k",
+          "answer",
+          "found",
+          "refusal_reason",
+          "citations",
+          "usage",
+          "latency"
+        ],
+        "title": "AskResponse"
+      },
+      "AskUsage": {
+        "properties": {
+          "llm_calls": {
+            "type": "integer",
+            "title": "Llm Calls",
+            "description": "0 when the answer was refused before the LLM."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "The model that answered.",
+            "examples": [
+              "gpt-x"
+            ]
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd",
+            "description": "Estimate from LLM_*_PRICE_PER_1M; null when prices aren't configured."
+          }
+        },
+        "type": "object",
+        "required": [
+          "llm_calls",
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd"
+        ],
+        "title": "AskUsage"
+      },
+      "Body_upload_document_documents_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "A PDF manual."
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_document_documents_post"
+      },
+      "Cause": {
+        "properties": {
+          "cause": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Cause"
+          },
+          "likelihood": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Likelihood"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "type": "array",
+            "title": "Evidence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cause",
+          "likelihood",
+          "evidence"
+        ],
+        "title": "Cause"
+      },
+      "Citation": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Doc Id"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "snippet": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Snippet"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "doc_id",
+          "page",
+          "snippet"
+        ],
+        "title": "Citation"
+      },
+      "DiagnoseRequest": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Description",
+            "description": "The problem, in the technician's words."
+          },
+          "equipment_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equipment Id",
+            "description": "Tag or number of the equipment, if known."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "description"
+        ],
+        "title": "DiagnoseRequest",
+        "examples": [
+          {
+            "description": "Mud pump 2 is losing discharge pressure and knocking since the last liner change.",
+            "equipment_id": "MP-2"
+          }
+        ]
+      },
+      "DocumentList": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentResponse"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "documents"
+        ],
+        "title": "DocumentList"
+      },
+      "DocumentResponse": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id",
+            "description": "Stable ID used in citations.",
+            "examples": [
+              "drilling-manual"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "examples": [
+              "Drilling Manual"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "examples": [
+              "Drilling_Manual.pdf"
+            ]
+          },
+          "pages": {
+            "type": "integer",
+            "title": "Pages",
+            "description": "Pages in the PDF.",
+            "examples": [
+              68
+            ]
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks",
+            "description": "Searchable chunks stored.",
+            "examples": [
+              100
+            ]
+          },
+          "missing_pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Missing Pages",
+            "description": "Pages left without text (scans when OCR is off). Not searchable.",
+            "examples": [
+              []
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc_id",
+          "title",
+          "filename",
+          "pages",
+          "chunks",
+          "missing_pages"
+        ],
+        "title": "DocumentResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "description": "Always 'ok' when the API process is up."
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Installed rig-assist version.",
+            "examples": [
+              "0.1.0"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "HealthResponse"
+      },
+      "JobCreated": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "description": "Always 'queued' when created."
+          },
+          "status_url": {
+            "type": "string",
+            "title": "Status Url",
+            "description": "Poll this for the result.",
+            "examples": [
+              "/jobs/3f2a…"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "status_url"
+        ],
+        "title": "JobCreated"
+      },
+      "JobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkOrder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The work order, when status is 'done'."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Why the job failed, when status is 'failed'."
+          },
+          "trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Url",
+            "description": "Link to the run's trace in Langfuse, when tracing is on (LANGFUSE_* keys)."
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobUsage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "LLM usage, when status is 'done'."
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/JobStep"
+            },
+            "type": "array",
+            "title": "Steps",
+            "description": "Per finished node, in the order they ran; grows while the job runs."
+          },
+          "current_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Node",
+            "description": "The node working now (running), or the one that failed (failed)."
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "disclaimer": {
+            "type": "string",
+            "title": "Disclaimer",
+            "default": "Rig Assist is not a safety-certified system. Check every answer against the cited manual pages and follow site procedures and your permit-to-work system."
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "result",
+          "error",
+          "trace_url",
+          "usage",
+          "steps",
+          "current_node",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "JobResponse"
+      },
+      "JobStep": {
+        "properties": {
+          "node": {
+            "type": "string",
+            "title": "Node",
+            "examples": [
+              "diagnosis"
+            ]
+          },
+          "seconds": {
+            "type": "number",
+            "title": "Seconds"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node",
+          "seconds",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "JobStep"
+      },
+      "JobUsage": {
+        "properties": {
+          "llm_calls": {
+            "type": "integer",
+            "title": "Llm Calls",
+            "description": "Every LLM call, retries included."
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd",
+            "description": "Estimate from LLM_*_PRICE_PER_1M; null when prices aren't configured."
+          }
+        },
+        "type": "object",
+        "required": [
+          "llm_calls",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd"
+        ],
+        "title": "JobUsage"
+      },
+      "SearchHit": {
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id",
+            "examples": [
+              "drilling-manual::p36::c0"
+            ]
+          },
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id",
+            "examples": [
+              "drilling-manual"
+            ]
+          },
+          "doc_title": {
+            "type": "string",
+            "title": "Doc Title",
+            "examples": [
+              "Drilling Manual"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "1-based page in the PDF (not the printed number).",
+            "examples": [
+              36
+            ]
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section",
+            "description": "Nearest heading, if detected.",
+            "examples": [
+              "7.1 Causes of a Kick"
+            ]
+          },
+          "parser": {
+            "type": "string",
+            "title": "Parser",
+            "description": "'pdfplumber' (text layer) or 'olmocr' (OCR).",
+            "examples": [
+              "pdfplumber"
+            ]
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Higher is more relevant; the scale depends on the mode: BM25 score, cosine similarity (dense), RRF score (hybrid) or cross-encoder logit (hybrid_rerank).",
+            "examples": [
+              6.67
+            ]
+          },
+          "dense_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dense Score",
+            "description": "Cosine similarity from dense retrieval (-1..1), on the same scale in every dense mode. Null in 'bm25' mode, or when dense retrieval didn't return the chunk.",
+            "examples": [
+              0.82
+            ]
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "doc_id",
+          "doc_title",
+          "page",
+          "section",
+          "parser",
+          "score",
+          "dense_score",
+          "text"
+        ],
+        "title": "SearchHit"
+      },
+      "SearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Query",
+            "description": "A question or keywords."
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "description": "How many chunks to return.",
+            "default": 5
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "bm25",
+              "dense",
+              "hybrid",
+              "hybrid_rerank"
+            ],
+            "title": "Mode",
+            "description": "Retrieval method. 'hybrid_rerank' (default): hybrid's top 20 reordered by a cross-encoder; most accurate on the eval set, about 2 s per query on CPU. 'hybrid': BM25 and dense fused by reciprocal rank fusion (~0.1 s). 'dense': embedding similarity. 'bm25': keyword match, the only mode that works without Qdrant.",
+            "default": "hybrid_rerank"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "SearchRequest",
+        "examples": [
+          {
+            "mode": "hybrid",
+            "query": "what causes a kick while drilling",
+            "top_k": 5
+          }
+        ]
+      },
+      "SearchResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array",
+            "title": "Results",
+            "description": "Best first. Empty when nothing matches."
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "mode",
+          "results"
+        ],
+        "title": "SearchResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WorkOrder": {
+        "properties": {
+          "equipment": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Equipment"
+          },
+          "symptoms": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Symptoms"
+          },
+          "probable_causes": {
+            "items": {
+              "$ref": "#/components/schemas/Cause"
+            },
+            "type": "array",
+            "title": "Probable Causes"
+          },
+          "recommended_actions": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Recommended Actions"
+          },
+          "safety_warnings": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Safety Warnings"
+          },
+          "blocked_actions": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Blocked Actions"
+          },
+          "escalate_to_engineer": {
+            "type": "boolean",
+            "title": "Escalate To Engineer"
+          },
+          "open_questions": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Open Questions"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "type": "array",
+            "title": "Citations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "equipment",
+          "symptoms",
+          "probable_causes",
+          "recommended_actions",
+          "safety_warnings",
+          "blocked_actions",
+          "escalate_to_engineer",
+          "open_questions",
+          "citations"
+        ],
+        "title": "WorkOrder"
+      }
+    }
+  }
+}
