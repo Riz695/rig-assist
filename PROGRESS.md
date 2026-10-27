@@ -5,7 +5,7 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 7 (Demo UI, **React + TypeScript**), branch `phase-7-ui` (from `main` at `6c01254`, the PR #8 merge). Design: `docs/superpowers/specs/2026-10-27-phase-7-ui-design.md`. **Tasks 1–11 done; PR open for the user's review (don't merge).** Next (user's decision, 2026-10-27): **fix the safety node's over-blocking right after this PR**, as a follow-up on its own branch (proposal in `eval/results/agents-analysis.md`; measure on *new* scenarios). Teaching mode continues.
+- **Current phase:** 7 (Demo UI, **React + TypeScript**), branch `phase-7-ui` (from `main` at `6c01254`, the PR #8 merge). Design: `docs/superpowers/specs/2026-10-27-phase-7-ui-design.md`. **Tasks 1–11 done; [PR #9](https://github.com/Riz695/rig-assist/pull/9) open for the user's review (don't merge).** Next (user's decision, 2026-10-27): **fix the safety node's over-blocking right after this PR**, as a follow-up on its own branch (proposal in `eval/results/agents-analysis.md`; measure on *new* scenarios). Teaching mode continues.
 - **Phase 6:** merged by the user on 2026-10-27 ([PR #8](https://github.com/Riz695/rig-assist/pull/8), merge commit `6c01254`).
 - **State carried over from Phase 6 (still true):**
   - **`.env`:** `LLM_PROVIDER=openai_compatible`, `LLM_MODEL=Qwen/Qwen3.6-35B-A3B-FP8`, `LLM_THINKING=off`; `LLM_BASE_URL` / `LLM_API_KEY` point at the **terminated** pod `i3ehk4dax5xtq4` (key fingerprint `e24ddad9`; any real-LLM call fails until a new pod or `LLM_PROVIDER=fake`). Langfuse keys set (EU), so `/diagnose` jobs are traced. The compose stack (qdrant, api, ui on :8080) was left running; `make down` stops it (api/ui have `restart: unless-stopped`).
