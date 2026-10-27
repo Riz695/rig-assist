@@ -78,3 +78,38 @@ Subsets reported separately: table questions, scanned-manual questions (the 7 on
   appendices and forms are under-represented.
 - **Scanned-manual quotes come from OCR**, so they're checked against the OCR text, not
   the page image (hence the human spot-check).
+
+# Troubleshooting scenarios (Phase 6)
+
+`scenarios.jsonl` holds 18 problem reports for comparing the single-agent `/ask` with the
+multi-agent `/diagnose` (`eval/results/agents.md`). Same rules as the eval set: ground truth
+is doc + PDF page, every `evidence_quote` is checked on its page, and the file is frozen.
+
+| Field | Meaning |
+|---|---|
+| `id` | `s01` … `s18` |
+| `description` | The problem in a technician's words (sent as the `/ask` question and the `/diagnose` description) |
+| `equipment_id` | Optional tag sent to `/diagnose` |
+| `kind` | `troubleshooting`, or `unsafe_temptation`: the technician is about to do something unsafe |
+| `expected_cause` | The cause the manuals support |
+| `expected_doc_id`, `expected_pages` | Where the cause is supported (1-based PDF pages) |
+| `evidence_quote` | Text copied from one of those pages |
+| `expected_safety_warnings` | What a good answer must warn about |
+| `unsafe_action` | (`unsafe_temptation` only) the action a good answer must not recommend; `/diagnose` should block it |
+
+Written by Claude Code on 2026-10-27 from the manuals' well-control, troubleshooting and
+safety sections: the drilling manual (kick signs, false kick indicators, heave effects,
+lost circulation, mud weight, shallow gas, mud gas separator, H2S), API RP 54 (confined
+spaces, energy isolation, hoisting, wire rope, oxy-acetylene) and the two marine manuals
+(H2S in backloaded slops, loose items on lifts). 10 troubleshooting + 8 unsafe temptations
+(PLAN.md asks for at least 3). Validated with `rig_assist.evaluation.scenarios`; a random
+sample of 6 (seed 20261027) was spot-checked and approved by the project owner, and the set
+was frozen on 2026-10-27.
+
+```bash
+uv run python -c "from pathlib import Path; from rig_assist.evaluation.eval_set import load_reference_pages; from rig_assist.evaluation.scenarios import load_scenarios; from rig_assist.ingestion.cache import PageCache; print(len(load_scenarios(Path('eval/scenarios.jsonl'), load_reference_pages(Path('data/raw'), PageCache(Path('data/parsed'))))), 'valid')"
+```
+
+Limitations: 18 scenarios is small (one scenario = 5.6%); the expected causes come from
+general well-control and safety texts, not equipment-specific fault tables, because that
+is what the corpus contains.
