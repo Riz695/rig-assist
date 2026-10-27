@@ -92,7 +92,7 @@ export-base: ## The base embedder exported like a fine-tuned one (fp32), for mak
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db
 
-up: ## Build and start the stack in the background (API on http://localhost:8000/docs)
+up: ## Build and start the stack in the background (demo on http://localhost:8080, API docs on :8000/docs)
 	docker compose up --build --detach
 
 down: ## Stop the docker compose stack
