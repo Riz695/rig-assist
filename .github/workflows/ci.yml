@@ -44,6 +44,26 @@ jobs:
       - run: uv sync --locked
       - run: make test
 
+  ui:
+    # The React + TypeScript UI: lint, format, type-check, tests, production build.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      # npm ci installs exactly what package-lock.json says, and fails if it is stale.
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   docker:
     # Build the API image and check that the container starts and answers /health.
     # No push: publishing images comes with deployment (Phase 8).
