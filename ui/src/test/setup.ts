@@ -1,7 +1,13 @@
-// Adds DOM matchers such as toBeInTheDocument() to Vitest's expect,
-// and unmounts rendered components after each test.
+// Adds DOM matchers such as toBeInTheDocument() to Vitest's expect, starts the fake API
+// (any request without a handler fails the test), and cleans up after each test.
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach } from 'vitest'
+import { afterAll, afterEach, beforeAll } from 'vitest'
+import { server } from './server'
 
-afterEach(() => cleanup())
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterEach(() => {
+  cleanup()
+  server.resetHandlers()
+})
+afterAll(() => server.close())
