@@ -59,6 +59,7 @@ Order of work:
 
 | Task | Commits | Notes file (Obsidian) |
 |---|---|---|
+| Live job progress: `TroubleshootingGraph.run(progress=…)` streams LangGraph `stream_mode=["tasks", "values"]` (node start = event with `input`, finish = event with `result`; replaces `invoke`; the plan's custom hook wasn't needed) to a `Progress` protocol; `JobStore.node_started` / `node_finished` (only while `running`, conditional UPDATE; steps appended atomically with SQLite `json_insert(steps, '$[#]', …)`), new `current_node` column (migrated like `trace_url`; cleared on finish, kept on failure = the node that failed); `run_job`'s `_StoreProgress` logs and ignores progress-write errors; `step_json`; `GET /jobs/{id}` has `current_node` and partial `steps`. 837 tests | `2e9ff56` test → `76ebb58` feat | `Tasks/P7 - Live job progress.md` |
 
 ## Phase 6: Multi-agent graph (LangGraph)
 
