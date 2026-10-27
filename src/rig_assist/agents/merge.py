@@ -1,7 +1,8 @@
 """Build the WorkOrder from the nodes' outputs. Code, not an LLM, so these always hold:
 
-- **Safety precedence:** an action the safety review blocks is in `blocked_actions` and
-  never in `recommended_actions`, whatever the diagnosis proposed.
+- **Safety precedence:** an action the safety review judges unsafe, or blocks in free
+  text, is in `blocked_actions` and never in `recommended_actions`, whatever the diagnosis
+  proposed. A free-text block wins over a "safe" verdict on the same action.
 - **Escalation:** `escalate_to_engineer` is true when safety flags a hazard or no cause
   has supporting evidence (including no cause at all).
 - **Citation integrity:** every citation is a retrieved chunk's page, with that chunk's
@@ -98,7 +99,7 @@ def build_work_order(
         raise ValueError("a diagnosis needs a safety review before it becomes a work order")
 
     proposed = proposed_actions(diagnosis)
-    numbers = sorted({block.number for block in safety.blocked})
+    numbers = sorted({v.number for v in safety.verdicts if v.verdict == "unsafe"})
     for number in numbers:
         if number > len(proposed):
             raise ValueError(f"safety blocked action {number}; only {len(proposed)} proposed")

@@ -338,7 +338,7 @@ def test_a_wrong_copy_is_retried_once_then_fails() -> None:
 
 
 def test_the_safety_prompt_asks_for_a_verdict_on_each_numbered_action() -> None:
-    assert '"verdicts"' in SAFETY_PROMPT and "as written" in SAFETY_PROMPT
+    assert '"verdicts"' in SAFETY_PROMPT and "as written" in SAFETY_PROMPT.lower()
     assert '"blocked"' not in SAFETY_PROMPT
     llm = FakeLlm([safety_reply()])
     run_safety(llm, ScriptedRetriever(), DESCRIPTION, TRIAGE, DIAGNOSIS, [])

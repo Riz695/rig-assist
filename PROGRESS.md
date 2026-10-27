@@ -5,7 +5,8 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 7 (Demo UI, **React + TypeScript**), branch `phase-7-ui` (from `main` at `6c01254`, the PR #8 merge). Design: `docs/superpowers/specs/2026-10-27-phase-7-ui-design.md`. **Tasks 1–11 done; [PR #9](https://github.com/Riz695/rig-assist/pull/9) open for the user's review (don't merge).** Next (user's decision, 2026-10-27): **fix the safety node's over-blocking right after this PR**, as a follow-up on its own branch (proposal in `eval/results/agents-analysis.md`; measure on *new* scenarios). Teaching mode continues.
+- **Current work:** safety node over-blocking fix (follow-up to Phase 6, user's decision 2026-10-27), branch `fix-safety-overblocking` (from `main` at `ab588bf`, the PR #9 merge). Design (approved): `docs/superpowers/specs/2026-10-27-safety-verdicts-design.md`; plan: `docs/superpowers/plans/2026-10-27-safety-verdicts.md` (5 tasks, executed natively in this session; user's choice). Teaching mode continues.
+- **Phase 7:** merged by the user on 2026-10-27 ([PR #9](https://github.com/Riz695/rig-assist/pull/9), merge commit `ab588bf`).
 - **Phase 6:** merged by the user on 2026-10-27 ([PR #8](https://github.com/Riz695/rig-assist/pull/8), merge commit `6c01254`).
 - **State carried over from Phase 6 (still true):**
   - **`.env`:** `LLM_PROVIDER=openai_compatible`, `LLM_MODEL=Qwen/Qwen3.6-35B-A3B-FP8`, `LLM_THINKING=off`; `LLM_BASE_URL` / `LLM_API_KEY` point at the **terminated** pod `i3ehk4dax5xtq4` (key fingerprint `e24ddad9`; any real-LLM call fails until a new pod or `LLM_PROVIDER=fake`). Langfuse keys set (EU), so `/diagnose` jobs are traced. The compose stack (qdrant, api, ui on :8080) was left running; `make down` stops it (api/ui have `restart: unless-stopped`).
@@ -35,6 +36,14 @@ Running log of what's done, so any new session (or person) can pick up where the
 - ✅ RRF fusion tests with deterministic fake rankings (`tests/test_hybrid.py`); idempotent ingestion in both indexes (`tests/test_pipeline.py`, `tests/test_api_documents.py`, `tests/test_v1_baseline.py`); mode dispatch with fakes (`tests/test_search_service.py`).
 - ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
 - User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
+
+## Safety fix: a verdict per proposed action
+
+Why: the safety node blocked by number only; eval run 2 hand audit found 12 of 17 numbered blocks on a safe action, and the Phase 7 live check blocked "DO NOT approach the area without SCBA". User's choices (2026-10-27): **verdict per action + copy check** (1 call), measured by **a new frozen scenario set A/B (old node vs new) + the new node on the frozen 18**.
+
+| Task | Commits | Notes |
+|---|---|---|
+| Verdict per action: `ActionVerdict(number, action, verdict: safe/unsafe, hazard)` (hazard ⇔ unsafe, validator) replaces `BlockedAction`; `SafetyReview.verdicts`. `nodes.check_verdicts` (through `complete_structured`'s `check`, one retry with the error): one verdict per action, numbers 1..n once, copied action equals its number's action ignoring case, spacing, end punctuation and quotes. `SAFETY_PROMPT`: judge each action **as written**; preventive actions (testing, isolating, bleeding down, BA, stopping, keeping people away) are safe; worries about doing it wrongly go to warnings or `other_blocked` as the unsafe variant. Merge blocks unsafe verdicts + `other_blocked` (free text wins over "safe"). `WorkOrder`/API/OpenAPI unchanged. 871 tests | `6bc0ded` test → feat (this commit) | `Tasks/Safety fix - Verdict per action.md` |
 
 ## Phase 7: Demo UI (React + TypeScript)
 

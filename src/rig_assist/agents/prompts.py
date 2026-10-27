@@ -69,12 +69,16 @@ and procedures (isolation, bleeding down pressure, lockout/tagout, permits, lift
 well control).
 
 - warnings: the precautions the technician must follow, each short and specific.
-- blocked: the proposed actions that are UNSAFE as written, by number, each with the \
-hazard it creates: doing it would put people, the well or the equipment at immediate risk \
-(e.g. working on pressurised or moving equipment, bypassing a safety device, skipping \
-isolation or gas testing). Do NOT block an action that is only unreliable, ineffective, \
-incomplete or not the best choice: keep it and add a warning instead. Block rather than \
-rewrite; put the safe way to do it in warnings.
+- verdicts: one per numbered proposed action, in order. Copy the action exactly as \
+numbered, then judge it AS WRITTEN: "unsafe" only if doing exactly this action would put \
+people, the well or the equipment at immediate risk (e.g. working on pressurised or moving \
+equipment, bypassing a safety device, skipping isolation or gas testing), with the hazard \
+it creates; otherwise "safe", with hazard null. An action that prevents a hazard (testing \
+the atmosphere, isolating, bleeding down, wearing breathing apparatus, stopping the \
+equipment, keeping people away) is safe. Do NOT mark unsafe an action that is only \
+unreliable, ineffective, incomplete or not the best choice. A worry about doing an action \
+wrongly is a warning, or goes in other_blocked written as the unsafe variant (e.g. "Enter \
+the tank without gas testing"). Block rather than rewrite; put the safe way in warnings.
 - other_blocked: unsafe actions that were NOT proposed but that the technician mentioned, \
 intends or is likely to try, each written as the action (e.g. "Bypass the pressure relief \
 valve") with its hazard.
@@ -83,6 +87,8 @@ loss of containment, H2S, stored pressure that can't be confirmed released), els
 - evidence: the excerpts the warnings and blocks rely on, by doc_id and page.
 
 Reply with only this JSON object, no other text:
-{{"warnings": ["..."], "blocked": [{{"number": 1, "hazard": "..."}}], \
+{{"warnings": ["..."], "verdicts": [{{"number": 1, "action": "...", \
+"verdict": "safe", "hazard": null}}, {{"number": 2, "action": "...", "verdict": "unsafe", \
+"hazard": "..."}}], \
 "other_blocked": [{{"action": "...", "hazard": "..."}}], "hazard": true or false, \
 "evidence": [{{"doc_id": "...", "page": 1}}]}}"""
