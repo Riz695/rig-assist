@@ -175,3 +175,23 @@ def test_jobs_left_running_by_a_restart_are_failed_at_startup(tmp_path: Path) ->
         response = client.get(f"/jobs/{job.id}").json()
     assert response["status"] == "failed"
     assert "restart" in response["error"]
+
+
+def test_the_job_links_to_its_trace_when_tracing_is_on(tmp_path: Path) -> None:
+    from test_tracing import FakeTracer
+
+    dense = DenseIndex(QdrantClient(":memory:"), "test_chunks", KeywordEmbedder())
+    tracer = FakeTracer(url="https://cloud.langfuse.com/project/p/traces/t9")
+    app = create_app(
+        settings_for(tmp_path),
+        dense=dense,
+        cross_encoder=FakeCrossEncoder(),
+        llm=FakeLlm(FULL),
+        tracer=tracer,
+    )
+    client = TestClient(app)
+    client.post("/documents", files={"file": ("Pump_Manual.pdf", PUMP_MANUAL, "application/pdf")})
+    job = client.get(diagnose(client, description=DESCRIPTION)["status_url"]).json()
+    assert job["status"] == "done"
+    assert job["trace_url"] == "https://cloud.langfuse.com/project/p/traces/t9"
+    assert tracer.spans[0].name == "diagnose"
