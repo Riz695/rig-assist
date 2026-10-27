@@ -34,7 +34,7 @@ class Retriever:
         return [hit("pump", 12, "Worn liners cause pressure loss."), hit("pump", 14)]
 
 
-def triage(open_questions: list[str] | None = None) -> str:
+def triage(open_questions: list[str] | None = None, critical: bool = False) -> str:
     return json.dumps(
         {
             "equipment": "Triplex mud pump",
@@ -42,6 +42,7 @@ def triage(open_questions: list[str] | None = None) -> str:
             "symptoms": ["pressure loss", "knocking"],
             "operating_context": None,
             "open_questions": open_questions or [],
+            "critical_info_missing": critical,
         }
     )
 
@@ -69,8 +70,10 @@ DIAGNOSIS = json.dumps(
 def safety(**overrides: Any) -> str:
     data = {
         "warnings": ["Bleed the pump to zero pressure and lock it out before opening"],
-        "blocked_action_numbers": [2],
-        "other_blocked_actions": ["Bypass the relief valve"],
+        "blocked": [{"number": 2, "hazard": "Opening the fluid end while pressurised"}],
+        "other_blocked": [
+            {"action": "Bypass the relief valve", "hazard": "No overpressure protection"}
+        ],
         "hazard": False,
         "evidence": [{"doc_id": "pump", "page": 30}],
     }
@@ -95,12 +98,20 @@ def test_normal_input_visits_every_node_in_order() -> None:
 
 
 def test_missing_critical_information_goes_straight_to_the_report() -> None:
-    llm, retriever = FakeLlm([triage(open_questions=["Which pump?"])]), Retriever()
+    llm, retriever = FakeLlm([triage(["Which pump?"], critical=True)]), Retriever()
     result = TroubleshootingGraph(llm, retriever).run("pump noise")
     assert result.visited == ["triage", "report"]
     assert result.work_order.open_questions == ["Which pump?"]
     assert result.work_order.probable_causes == []
     assert retriever.queries == [] and len(llm.calls) == 1
+
+
+def test_open_questions_without_missing_critical_info_still_get_a_full_diagnosis() -> None:
+    replies = [triage(["Which shift noticed it?"]), PLAN_DONE, DIAGNOSIS, safety()]
+    result = TroubleshootingGraph(FakeLlm(replies), Retriever()).run(DESCRIPTION)
+    assert result.visited == list(NODES)
+    assert result.work_order.open_questions == ["Which shift noticed it?"]
+    assert result.work_order.blocked_actions  # the safety review ran
 
 
 # --- end to end through the graph --------------------------------------------

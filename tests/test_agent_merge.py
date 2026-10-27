@@ -11,9 +11,11 @@ from pydantic import ValidationError
 
 from rig_assist.agents.merge import build_work_order
 from rig_assist.agents.schemas import (
+    BlockedAction,
     Citation,
     Diagnosis,
     EvidenceRef,
+    OtherBlockedAction,
     ProposedCause,
     SafetyReview,
     TriageResult,
@@ -41,6 +43,7 @@ TRIAGE = TriageResult(
     symptoms=["pressure dropping", "knocking"],
     operating_context="drilling at 9,000 ft",
     open_questions=[],
+    critical_info_missing=False,
 )
 
 
@@ -62,11 +65,19 @@ def diagnosis(**overrides: Any) -> Diagnosis:
     return Diagnosis(**(data | overrides))
 
 
+def block(number: int) -> BlockedAction:
+    return BlockedAction(number=number, hazard="Opening a pressurised pump")
+
+
+def other(action: str) -> OtherBlockedAction:
+    return OtherBlockedAction(action=action, hazard="Overpressure with no protection")
+
+
 def safety(**overrides: Any) -> SafetyReview:
     data: dict[str, Any] = {
         "warnings": ["Bleed the pump down to zero pressure before opening it"],
-        "blocked_action_numbers": [],
-        "other_blocked_actions": [],
+        "blocked": [],
+        "other_blocked": [],
         "hazard": False,
         "evidence": [ref("pump", 30)],
     }
@@ -77,9 +88,7 @@ def safety(**overrides: Any) -> SafetyReview:
 
 
 def test_a_blocked_action_is_never_recommended() -> None:
-    order = build_work_order(
-        TRIAGE, HITS, diagnosis(), safety(blocked_action_numbers=[2], hazard=True)
-    )
+    order = build_work_order(TRIAGE, HITS, diagnosis(), safety(blocked=[block(2)], hazard=True))
     assert order.recommended_actions == ["Inspect the liners", "Check suction pressure"]
     assert order.blocked_actions == ["Open the fluid end to check the valves"]
 
@@ -89,7 +98,7 @@ def test_safety_can_block_an_action_the_diagnosis_did_not_propose() -> None:
         TRIAGE,
         HITS,
         diagnosis(),
-        safety(other_blocked_actions=["Bypass the relief valve"], hazard=True),
+        safety(other_blocked=[other("Bypass the relief valve")], hazard=True),
     )
     assert order.blocked_actions == ["Bypass the relief valve"]
     assert len(order.recommended_actions) == 3
@@ -100,7 +109,7 @@ def test_a_blocked_action_repeated_in_other_words_of_case_is_still_removed() -> 
         TRIAGE,
         HITS,
         diagnosis(recommended_actions=["Inspect the liners", "Bypass  the RELIEF valve"]),
-        safety(other_blocked_actions=["bypass the relief valve"], hazard=True),
+        safety(other_blocked=[other("bypass the relief valve")], hazard=True),
     )
     assert order.recommended_actions == ["Inspect the liners"]
     assert order.blocked_actions == ["bypass the relief valve"]
@@ -113,7 +122,7 @@ def test_safety_warnings_are_kept() -> None:
 
 def test_a_block_number_outside_the_proposed_actions_is_an_error() -> None:
     with pytest.raises(ValueError, match="action 4"):
-        build_work_order(TRIAGE, HITS, diagnosis(), safety(blocked_action_numbers=[4]))
+        build_work_order(TRIAGE, HITS, diagnosis(), safety(blocked=[block(4)]))
 
 
 def test_duplicate_recommended_actions_are_merged() -> None:
@@ -225,6 +234,7 @@ def test_missing_information_gives_a_work_order_with_only_open_questions() -> No
         symptoms=["noise"],
         operating_context=None,
         open_questions=["Which pump: MP-1 or MP-2?", "Is the noise on suction or discharge?"],
+        critical_info_missing=True,
     )
     order = build_work_order(triage, [], None, None)
     assert order.equipment == "Mud pump"
@@ -247,13 +257,26 @@ def test_node_outputs_are_strict() -> None:
         SafetyReview.model_validate(
             {
                 "warnings": [],
-                "blocked_action_numbers": [0],
-                "other_blocked_actions": [],
+                "blocked": [{"number": 0, "hazard": "x"}],
+                "other_blocked": [],
                 "hazard": False,
                 "evidence": [],
-            }  # fmt: skip
+            }
         )
     with pytest.raises(ValidationError):
         TriageResult.model_validate(
-            {"equipment": "pump", "symptoms": [], "open_questions": [], "extra": 1}
+            {
+                "equipment": "pump",
+                "symptoms": [],
+                "open_questions": [],
+                "critical_info_missing": False,
+                "extra": 1,
+            }
         )
+
+
+def test_a_block_or_triage_flag_must_be_stated() -> None:
+    with pytest.raises(ValidationError):  # every block names the hazard it prevents
+        BlockedAction.model_validate({"number": 1, "hazard": ""})
+    with pytest.raises(ValidationError):  # the routing flag has no default
+        TriageResult.model_validate({"equipment": "pump", "symptoms": [], "open_questions": []})

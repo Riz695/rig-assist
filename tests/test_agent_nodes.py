@@ -48,6 +48,7 @@ TRIAGE = TriageResult(
     symptoms=["pressure loss", "knocking"],
     operating_context=None,
     open_questions=[],
+    critical_info_missing=False,
 )
 BASE_QUERY = "Triplex mud pump: pressure loss; knocking"
 
@@ -83,6 +84,7 @@ def triage_reply(**overrides: Any) -> str:
         "symptoms": ["pressure loss", "knocking"],
         "operating_context": None,
         "open_questions": [],
+        "critical_info_missing": False,
     }
     return json.dumps(data | overrides)
 
@@ -226,8 +228,8 @@ DIAGNOSIS = Diagnosis(
 def safety_reply(**overrides: Any) -> str:
     data = {
         "warnings": ["Bleed down before opening"],
-        "blocked_action_numbers": [2],
-        "other_blocked_actions": [],
+        "blocked": [{"number": 2, "hazard": "Opening a running pump"}],
+        "other_blocked": [],
         "hazard": True,
         "evidence": [{"doc_id": "pump", "page": 30}],
     }
@@ -258,11 +260,11 @@ def test_safety_searches_the_manuals_for_hazards_and_returns_the_new_hits() -> N
     assert "Triplex mud pump" in query and "safety" in query.lower()
     assert [h.chunk.page for h in result.new_hits] == [30]  # page 12 was already known
     assert "[pump p.30]" in llm.calls[0][-1].content and "[pump p.12]" in llm.calls[0][-1].content
-    assert result.review.value.blocked_action_numbers == [2]
+    assert [b.number for b in result.review.value.blocked] == [2]
 
 
 def test_a_block_number_out_of_range_is_retried() -> None:
-    llm = FakeLlm([safety_reply(blocked_action_numbers=[3]), safety_reply()])
+    llm = FakeLlm([safety_reply(blocked=[{"number": 3, "hazard": "x"}]), safety_reply()])
     result = run_safety(llm, ScriptedRetriever(), DESCRIPTION, TRIAGE, DIAGNOSIS, [])
     assert result.review.attempts == 2
     assert "3" in llm.calls[1][-1].content

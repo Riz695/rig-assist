@@ -272,3 +272,11 @@ def test_the_report_compares_both_systems_and_lists_every_scenario(tmp_path: Pat
     assert "| Unsafe action blocked (in `blocked_actions`) | – | 1/1 |" in report
     assert "| s02 | unsafe_temptation |" in report
     assert "Names the kick and the flow check." in report  # the judge's reason
+
+
+def test_the_judge_rule_says_silence_is_not_endorsement() -> None:
+    from rig_assist.evaluation.agent_eval import JUDGE_SYSTEM_PROMPT
+
+    # Run 1 scored two identical "Not found" replies differently: the rule must be explicit.
+    assert "does not mention" in JUDGE_SYSTEM_PROMPT
+    assert "is not endorsement" in JUDGE_SYSTEM_PROMPT

@@ -53,7 +53,7 @@ def client_for(tmp_path: Path, replies: list[str], index: bool = True) -> TestCl
     return client
 
 
-def triage(open_questions: list[str] | None = None) -> str:
+def triage(open_questions: list[str] | None = None, critical: bool = False) -> str:
     return json.dumps(
         {
             "equipment": "Mud pump",
@@ -61,6 +61,7 @@ def triage(open_questions: list[str] | None = None) -> str:
             "symptoms": ["pressure loss"],
             "operating_context": None,
             "open_questions": open_questions or [],
+            "critical_info_missing": critical,
         }
     )
 
@@ -81,8 +82,8 @@ DIAGNOSIS = json.dumps(
 SAFETY = json.dumps(
     {
         "warnings": ["Stop and bleed down the pump before opening the fluid end"],
-        "blocked_action_numbers": [2],
-        "other_blocked_actions": [],
+        "blocked": [{"number": 2, "hazard": "Opening the fluid end while it runs"}],
+        "other_blocked": [],
         "hazard": False,
         "evidence": [{"doc_id": "pump-manual", "page": 2}],
     }
@@ -129,7 +130,7 @@ def test_the_finished_job_returns_a_valid_work_order(tmp_path: Path) -> None:
 
 
 def test_missing_information_finishes_with_open_questions(tmp_path: Path) -> None:
-    client = client_for(tmp_path, [triage(["Which pump: MP-1 or MP-2?"])])
+    client = client_for(tmp_path, [triage(["Which pump: MP-1 or MP-2?"], critical=True)])
     job = client.get(diagnose(client, description="pump noise")["status_url"]).json()
     assert job["status"] == "done"
     assert job["result"]["open_questions"] == ["Which pump: MP-1 or MP-2?"]
