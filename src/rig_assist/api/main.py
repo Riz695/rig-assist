@@ -1,11 +1,15 @@
 """FastAPI application. Run locally with: uv run uvicorn rig_assist.api.main:app --reload"""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from rig_assist import __version__
-from rig_assist.api.routes import ask, documents, health, search
+from rig_assist.api.routes import ask, diagnose, documents, health, search
 from rig_assist.config import Settings, get_settings
 from rig_assist.ingestion.store import IndexStore
+from rig_assist.jobs import JobStore
 from rig_assist.llm import LlmClient, make_llm
 from rig_assist.retrieval.dense import DenseIndex, make_dense_index
 from rig_assist.retrieval.rerank import CrossEncoder, FastEmbedCrossEncoder
@@ -24,6 +28,14 @@ def create_app(
     down (dense searches then return 503).
     """
     settings = settings or get_settings()
+    jobs = JobStore(settings.job_db_path)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Jobs run inside this process: any left queued or running died with the last one.
+        jobs.fail_unfinished()
+        yield
+
     if dense is None:
         dense = make_dense_index(settings)
     if cross_encoder is None:
@@ -31,6 +43,7 @@ def create_app(
             settings.reranker_model, cache_dir=str(settings.models_dir)
         )
     app = FastAPI(
+        lifespan=lifespan,
         title="Rig Assist API",
         version=__version__,
         description=(
@@ -39,6 +52,7 @@ def create_app(
         ),
     )
     app.state.settings = settings
+    app.state.jobs = jobs
     app.state.llm = llm if llm is not None else make_llm(settings)
     app.state.search_index = SearchIndex(
         IndexStore(settings.data_index_dir), dense=dense, cross_encoder=cross_encoder
@@ -47,6 +61,7 @@ def create_app(
     app.include_router(documents.router)
     app.include_router(search.router)
     app.include_router(ask.router)
+    app.include_router(diagnose.router)
     return app
 
 

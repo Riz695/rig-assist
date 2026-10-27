@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from rig_assist.agents.schemas import WorkOrder
+from rig_assist.jobs import JobStatus
 from rig_assist.rag import RefusalReason
 from rig_assist.retrieval.service import SearchMode
 
@@ -159,4 +161,65 @@ class AskResponse(BaseModel):
     )
     usage: AskUsage
     latency: AskLatency
+    disclaimer: str = DISCLAIMER
+
+
+# --- /diagnose and /jobs -------------------------------------------------------
+
+
+class DiagnoseRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Mud pump 2 is losing discharge pressure and knocking "
+                    "since the last liner change.",
+                    "equipment_id": "MP-2",
+                }
+            ]
+        },
+    )
+
+    description: str = Field(
+        min_length=1, max_length=4000, description="The problem, in the technician's words."
+    )
+    equipment_id: str | None = Field(
+        default=None, max_length=64, description="Tag or number of the equipment, if known."
+    )
+
+
+class JobCreated(BaseModel):
+    job_id: str
+    status: JobStatus = Field(description="Always 'queued' when created.")
+    status_url: str = Field(description="Poll this for the result.", examples=["/jobs/3f2a…"])
+
+
+class JobUsage(BaseModel):
+    llm_calls: int = Field(description="Every LLM call, retries included.")
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float | None = Field(
+        description="Estimate from LLM_*_PRICE_PER_1M; null when prices aren't configured."
+    )
+
+
+class JobStep(BaseModel):
+    node: str = Field(examples=["diagnosis"])
+    seconds: float
+    input_tokens: int
+    output_tokens: int
+
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    result: WorkOrder | None = Field(description="The work order, when status is 'done'.")
+    error: str | None = Field(description="Why the job failed, when status is 'failed'.")
+    trace_url: str | None = Field(description="Link to the run's trace, when tracing is on.")
+    usage: JobUsage | None = Field(description="LLM usage, when status is 'done'.")
+    steps: list[JobStep] = Field(description="Per node, in the order they ran.")
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
     disclaimer: str = DISCLAIMER

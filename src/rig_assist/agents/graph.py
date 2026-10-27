@@ -33,6 +33,7 @@ class Step:
     node: NodeName
     usage: Usage
     seconds: float
+    llm_calls: int  # retries included; 0 for the report (code)
 
 
 class State(TypedDict, total=False):
@@ -68,6 +69,10 @@ class GraphResult:
     def usage(self) -> Usage:
         return sum((step.usage for step in self.steps), Usage())
 
+    @property
+    def llm_calls(self) -> int:
+        return sum(step.llm_calls for step in self.steps)
+
 
 class TroubleshootingGraph:
     def __init__(
@@ -82,30 +87,30 @@ class TroubleshootingGraph:
         self.graph = self._build()
 
     def _timed(
-        self, node: NodeName, work: Callable[[State], tuple[dict[str, Any], Usage]]
+        self, node: NodeName, work: Callable[[State], tuple[dict[str, Any], Usage, int]]
     ) -> _NodeFn:
         """Wrap a node: run it, then record its usage and time as a Step."""
 
         def run(state: State) -> dict[str, Any]:
             start = self.clock()
-            update, usage = work(state)
-            return update | {"steps": [Step(node, usage, self.clock() - start)]}
+            update, usage, calls = work(state)
+            return update | {"steps": [Step(node, usage, self.clock() - start, calls)]}
 
         return run
 
-    def _triage(self, state: State) -> tuple[dict[str, Any], Usage]:
+    def _triage(self, state: State) -> tuple[dict[str, Any], Usage, int]:
         result = run_triage(self.llm, state["description"], state.get("equipment_id"))
-        return {"triage": result.value}, result.usage
+        return {"triage": result.value}, result.usage, result.attempts
 
-    def _retrieval(self, state: State) -> tuple[dict[str, Any], Usage]:
+    def _retrieval(self, state: State) -> tuple[dict[str, Any], Usage, int]:
         result = run_retrieval(self.llm, self.retriever, state["description"], state["triage"])
-        return {"hits": result.hits, "queries": result.queries}, result.usage
+        return {"hits": result.hits, "queries": result.queries}, result.usage, result.llm_calls
 
-    def _diagnosis(self, state: State) -> tuple[dict[str, Any], Usage]:
+    def _diagnosis(self, state: State) -> tuple[dict[str, Any], Usage, int]:
         result = run_diagnosis(self.llm, state["description"], state["triage"], state["hits"])
-        return {"diagnosis": result.value}, result.usage
+        return {"diagnosis": result.value}, result.usage, result.attempts
 
-    def _safety(self, state: State) -> tuple[dict[str, Any], Usage]:
+    def _safety(self, state: State) -> tuple[dict[str, Any], Usage, int]:
         result = run_safety(
             self.llm,
             self.retriever,
@@ -115,16 +120,17 @@ class TroubleshootingGraph:
             state["hits"],
         )
         hits = state["hits"] + result.new_hits
-        return {"safety": result.review.value, "hits": hits}, result.review.usage
+        review = result.review
+        return {"safety": review.value, "hits": hits}, review.usage, review.attempts
 
-    def _report(self, state: State) -> tuple[dict[str, Any], Usage]:
+    def _report(self, state: State) -> tuple[dict[str, Any], Usage, int]:
         order = build_work_order(
             state["triage"],
             state.get("hits", []),
             state.get("diagnosis"),
             state.get("safety"),
         )
-        return {"work_order": order}, Usage()
+        return {"work_order": order}, Usage(), 0
 
     @staticmethod
     def _after_triage(state: State) -> NodeName:

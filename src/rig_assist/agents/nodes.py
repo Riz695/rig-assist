@@ -87,8 +87,9 @@ def run_triage(
 class Retrieval:
     hits: list[ScoredChunk]  # first-found order, no duplicates, at most MAX_EVIDENCE
     queries: list[str]  # every query searched, in order
-    rounds: int  # planner calls made
+    rounds: int  # planner rounds
     usage: Usage
+    llm_calls: int  # planner calls, retries included
 
 
 def _first_query(triage: TriageResult, description: str) -> str:
@@ -123,6 +124,7 @@ def run_retrieval(
     searched: set[str] = set()
     usage = Usage()
     rounds = 0
+    llm_calls = 0
 
     def search(query: str) -> None:
         searched.add(" ".join(query.split()).casefold())
@@ -141,6 +143,7 @@ def run_retrieval(
         ]
         plan = complete_structured(llm, messages, SearchPlan, NODE_MAX_TOKENS)
         usage += plan.usage
+        llm_calls += plan.attempts
         rounds += 1
         new = [
             q
@@ -151,7 +154,7 @@ def run_retrieval(
             break
         for query in new:
             search(query)
-    return Retrieval(hits[:MAX_EVIDENCE], queries, rounds, usage)
+    return Retrieval(hits[:MAX_EVIDENCE], queries, rounds, usage, llm_calls)
 
 
 # --- diagnosis ---------------------------------------------------------------

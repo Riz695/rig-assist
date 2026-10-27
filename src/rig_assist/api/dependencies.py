@@ -3,6 +3,7 @@
 from fastapi import HTTPException, Request, status
 
 from rig_assist.config import Settings
+from rig_assist.jobs import JobStore
 from rig_assist.llm import LlmClient
 from rig_assist.retrieval.models import Retriever
 from rig_assist.retrieval.service import DENSE_MODES, SearchIndex, SearchMode
@@ -16,6 +17,11 @@ def get_app_settings(request: Request) -> Settings:
 def get_search_index(request: Request) -> SearchIndex:
     index: SearchIndex = request.app.state.search_index
     return index
+
+
+def get_job_store(request: Request) -> JobStore:
+    jobs: JobStore = request.app.state.jobs
+    return jobs
 
 
 def get_llm(request: Request) -> LlmClient:
