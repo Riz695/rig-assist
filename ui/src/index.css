@@ -74,7 +74,8 @@ p {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -557,4 +558,158 @@ select {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* --- ask ----------------------------------------------------------------------- */
+
+.ask-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field textarea {
+  height: auto;
+  padding: 10px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.form-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.example {
+  padding: 6px 12px;
+  border: 1px dashed var(--steel-300);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--steel-600);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.example:hover {
+  border-color: var(--steel-500);
+  color: var(--ink);
+}
+
+.answer,
+.refusal {
+  padding: 18px 20px;
+  border: 1px solid var(--steel-200);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+
+.answer-text {
+  font-size: 1.02rem;
+  line-height: 1.7;
+  max-width: 75ch;
+  white-space: pre-wrap;
+}
+
+.chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-inline: 2px;
+  vertical-align: baseline;
+}
+
+.chip {
+  padding: 0 8px;
+  border: 1px solid var(--steel-300);
+  border-radius: 4px;
+  background: var(--steel-100);
+  color: var(--steel-800);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--orange-600);
+  background: var(--orange-100);
+  color: var(--ink);
+}
+
+.chip:disabled {
+  cursor: default;
+}
+
+.subhead {
+  margin-top: 18px;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--steel-600);
+}
+
+.sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.source {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.source:hover {
+  background: var(--paper);
+}
+
+.source-name {
+  font-weight: 500;
+}
+
+.source-snippet {
+  color: var(--steel-500);
+  font-size: 0.88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.refusal {
+  display: flex;
+  gap: 12px;
+  color: var(--steel-600);
+}
+
+.refusal h3 {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.usage {
+  color: var(--steel-500);
+  font-size: 0.8rem;
 }
