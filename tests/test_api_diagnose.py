@@ -196,3 +196,26 @@ def test_the_job_links_to_its_trace_when_tracing_is_on(tmp_path: Path) -> None:
     assert job["status"] == "done"
     assert job["trace_url"] == "https://cloud.langfuse.com/project/p/traces/t9"
     assert tracer.spans[0].name == "diagnose"
+
+
+def test_a_running_job_returns_its_finished_steps_and_current_node(tmp_path: Path) -> None:
+    client = client_for(tmp_path, [], index=False)
+    store = JobStore(tmp_path / "jobs.sqlite")
+    job = store.create({"description": "x", "equipment_id": None})
+    store.start(job.id)
+    store.node_started(job.id, "triage")
+    store.node_finished(
+        job.id, {"node": "triage", "seconds": 1.5, "input_tokens": 300, "output_tokens": 40}
+    )
+    store.node_started(job.id, "retrieval")
+    running = client.get(f"/jobs/{job.id}").json()
+    assert running["status"] == "running"
+    assert running["current_node"] == "retrieval"
+    assert [s["node"] for s in running["steps"]] == ["triage"]
+    assert running["result"] is None
+
+
+def test_a_finished_job_has_no_current_node(tmp_path: Path) -> None:
+    client = client_for(tmp_path, FULL)
+    job = client.get(diagnose(client, description=DESCRIPTION)["status_url"]).json()
+    assert job["status"] == "done" and job["current_node"] is None

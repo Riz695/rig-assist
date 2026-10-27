@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from rig_assist.agents.graph import NODES, TroubleshootingGraph
+from rig_assist.agents.graph import NODES, Step, TroubleshootingGraph
 from rig_assist.agents.structured import StructuredOutputError
 from rig_assist.ingestion.models import Chunk
 from rig_assist.llm.fake import FakeLlm
@@ -189,3 +189,50 @@ def test_a_node_failure_propagates() -> None:
     llm = FakeLlm([triage(), PLAN_DONE, "not json", "still not json"])
     with pytest.raises(StructuredOutputError):
         TroubleshootingGraph(llm, Retriever()).run(DESCRIPTION)
+
+
+# --- live progress -----------------------------------------------------------
+
+
+class Recorder:
+    """A progress listener that records what the graph reports, in order."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str]] = []
+        self.finished: list[Step] = []
+
+    def node_started(self, node: str) -> None:
+        self.events.append(("start", node))
+
+    def node_finished(self, step: Step) -> None:
+        self.events.append(("end", step.node))
+        self.finished.append(step)
+
+
+def test_progress_reports_each_node_as_it_starts_and_finishes() -> None:
+    recorder = Recorder()
+    llm = FakeLlm([triage(), PLAN_DONE, DIAGNOSIS, safety()])
+    result = TroubleshootingGraph(llm, Retriever()).run(DESCRIPTION, progress=recorder)
+    assert recorder.events == [(kind, node) for node in NODES for kind in ("start", "end")]
+    assert recorder.finished == result.steps  # the same steps, reported as they happen
+
+
+def test_progress_follows_the_missing_information_route() -> None:
+    recorder = Recorder()
+    llm = FakeLlm([triage(["Which pump?"], critical=True)])
+    TroubleshootingGraph(llm, Retriever()).run("pump noise", progress=recorder)
+    assert recorder.events == [
+        ("start", "triage"),
+        ("end", "triage"),
+        ("start", "report"),
+        ("end", "report"),
+    ]
+
+
+def test_a_failing_node_is_reported_started_but_never_finished() -> None:
+    recorder = Recorder()
+    llm = FakeLlm([triage(), PLAN_DONE, "not json", "still not json"])
+    with pytest.raises(StructuredOutputError):
+        TroubleshootingGraph(llm, Retriever()).run(DESCRIPTION, progress=recorder)
+    assert recorder.events[-1] == ("start", "diagnosis")
+    assert ("end", "diagnosis") not in recorder.events
