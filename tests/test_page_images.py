@@ -24,7 +24,8 @@ def test_a_page_renders_as_a_png_of_the_requested_width(pdf: Path) -> None:
     assert png.startswith(PNG_SIGNATURE)
     image = Image.open(io.BytesIO(png))
     assert image.width == 600
-    assert image.height == round(600 * 792 / 612)  # US Letter keeps its aspect ratio
+    # US Letter keeps its aspect ratio (PDFium rounds the height up: within a pixel)
+    assert abs(image.height - 600 * 792 / 612) <= 1
 
 
 def test_pages_are_1_based_and_distinct(pdf: Path) -> None:
