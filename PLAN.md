@@ -126,7 +126,7 @@ The GitHub remote is the backup. Push often, so nothing is lost if the session, 
 | Experiment tracking | **MLflow** (local file store or compose service) | Every eval, parser comparison, and fine-tune run is logged; model registry for the fine-tuned embedder |
 | Tracing | Langfuse Cloud (free tier), **or MLflow 3 tracing** if it covers LangGraph well; decide in Phase 6 after checking docs | Optional either way: everything works without keys |
 | Long CPU jobs | **Docker Cloud Sandboxes** ($250 credit), see "Compute" below | Acceleration only: every job also runs locally |
-| Frontend | Streamlit | Thin demo UI only |
+| Frontend | **React + TypeScript** (Vite), served by nginx | Thin demo UI over the API (changed from Streamlit in Phase 7, user's choice: shows full-stack range). Types generated from the API's OpenAPI schema |
 | Cloud | Azure: Container Apps, Container Registry, Blob Storage, Azure OpenAI | |
 | CI/CD | GitHub Actions | |
 
@@ -158,7 +158,7 @@ I have $250 of Docker Cloud Sandboxes credit. Use it wherever a job is long and 
 
 ```mermaid
 flowchart LR
-    UI[Streamlit UI] --> API[FastAPI]
+    UI[React UI] --> API[FastAPI]
     API -->|/search| RET[Hybrid Retriever]
     API -->|/ask| SA[Single-agent RAG baseline]
     API -->|/diagnose| G[LangGraph agent graph]
@@ -197,9 +197,10 @@ rig-assist/
 ├── docs/
 │   ├── cloud-jobs.md        # running long jobs in Docker Cloud Sandboxes
 │   └── deployment.md
-├── ui/
+├── ui/                      # React + TypeScript (Vite); nginx image proxies /api to FastAPI
 │   ├── Dockerfile
-│   └── app.py
+│   ├── package.json
+│   └── src/
 ├── src/rig_assist/
 │   ├── config.py            # pydantic-settings
 │   ├── api/
@@ -454,11 +455,22 @@ class WorkOrder(BaseModel):
 ## Phase 7: Demo UI
 
 **Tasks**
-- Streamlit app with three tabs: Search (with a mode selector), Ask, and Diagnose. Diagnose polls the job and renders the `WorkOrder` nicely, with clickable citations showing doc and page.
-- Add the UI as a compose service.
+*Changed 2026-10-27 (user's decision): React + TypeScript instead of Streamlit; design in `docs/superpowers/specs/2026-10-27-phase-7-ui-design.md`.*
+
+**Tests first**
+- Live progress: the job store records each node as it starts and finishes, only while the job is running; `GET /jobs/{id}` returns the partial steps and the current node.
+- Page images: `GET /documents/{doc_id}/pages/{page}` returns a PNG; unknown doc, page out of range, or missing PDF → 404.
+- UI logic (Vitest): node-timeline state and work-order rendering rules (blocked actions never shown as recommended).
+
+**Tasks**
+- React + TypeScript app (Vite) with three tabs: Search (with a mode selector), Ask, and Diagnose. Diagnose polls the job and shows the graph's progress node by node, then renders the `WorkOrder` nicely, with clickable citations showing the snippet and the manual page as an image.
+- API types generated from FastAPI's OpenAPI schema; CI fails if they drift.
+- Component tests with Vitest + React Testing Library + MSW (fake API).
+- `ui/Dockerfile` (Node build → unprivileged nginx serving the static files and proxying `/api` to the API, so no CORS); add the UI as a compose service.
+- Diagnose needs a real LLM (no scripted demo): when it's unreachable, the UI says so plainly.
 
 **Acceptance**
-- `docker compose up` gives a working demo at `localhost:8501`.
+- `docker compose up` gives a working demo at `localhost:8080`.
 
 ---
 

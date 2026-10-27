@@ -5,7 +5,12 @@ Running log of what's done, so any new session (or person) can pick up where the
 
 ## Status
 
-- **Current phase:** 6 (Multi-agent graph, LangGraph), branch `phase-6-agents` (from `main` at `05628b6`, the PR #7 merge). **Tasks 1–7 done; PR open for the user's review (don't merge).** Stretch (human-in-the-loop) not done. Next: Phase 7 (demo UI) once merged. Teaching mode continues.
+- **Current phase:** 7 (Demo UI, **React + TypeScript**), branch `phase-7-ui` (from `main` at `6c01254`, the PR #8 merge). Design: `docs/superpowers/specs/2026-10-27-phase-7-ui-design.md`. Teaching mode continues.
+- **Phase 6:** merged by the user on 2026-10-27 ([PR #8](https://github.com/Riz695/rig-assist/pull/8), merge commit `6c01254`).
+- **State carried over from Phase 6 (still true):**
+  - **`.env`:** `LLM_PROVIDER=openai_compatible`, `LLM_MODEL=Qwen/Qwen3.6-35B-A3B-FP8`, `LLM_THINKING=off`; `LLM_BASE_URL` / `LLM_API_KEY` point at the **terminated** pod `0wxep4ohq4gpg8` (any real-LLM call fails until a new pod or `LLM_PROVIDER=fake`). Langfuse keys set (EU), so `/diagnose` jobs are traced.
+  - **Open decisions for the user:** (1) the safety node's over-blocking (12/17 numbered blocks block a safe action; fix proposed in `eval/results/agents-analysis.md`): deferred past Phase 7, **raise it again before recording the demo** (it will show); (2) the human-in-the-loop stretch (not done); (3) rotate the Langfuse keys if a transcript could be shared.
+  - **Gotchas:** RunPod MCP `create-pod` takes `cloud`, `image`, `entrypoint`, `cmd`, `env`, `disk`, `ports`, `gpu: {id, count, minCudaVersion}`; a fresh RTX 6000 Ada pod serves Qwen in ~4 min. Langfuse traces: `GET /api/public/v2/observations?traceId=…&fields=core,basic,io`. Keep `LLM_THINKING=off` for `/diagnose`.
 - **Phase 5:** merged by the user on 2026-10-27 ([PR #7](https://github.com/Riz695/rig-assist/pull/7), merge commit `05628b6`).
 - **Phase 0:** merged ([PR #1](https://github.com/Riz695/rig-assist/pull/1)). **Phase 1:** merged by the user on 2026-10-23 ([PR #3](https://github.com/Riz695/rig-assist/pull/3), merge commit `7c74b10`). **Phase 2:** merged by the user on 2026-10-24 ([PR #4](https://github.com/Riz695/rig-assist/pull/4), merge commit `23d26f9`). **Phase 3:** merged by the user on 2026-10-25 ([PR #5](https://github.com/Riz695/rig-assist/pull/5), merge commit `ad63769`). **Phase 4:** merged by the user on 2026-10-25 ([PR #6](https://github.com/Riz695/rig-assist/pull/6), merge commit `3ea8497`).
 - **Plan update:** [PR #2](https://github.com/Riz695/rig-assist/pull/2) merged on 2026-10-21 (pivot: olmOCR 2, fine-tuning, MLflow, LangGraph). `PLAN.md` on `main` is the plan to follow.
@@ -29,6 +34,31 @@ Running log of what's done, so any new session (or person) can pick up where the
 - ✅ RRF fusion tests with deterministic fake rankings (`tests/test_hybrid.py`); idempotent ingestion in both indexes (`tests/test_pipeline.py`, `tests/test_api_documents.py`, `tests/test_v1_baseline.py`); mode dispatch with fakes (`tests/test_search_service.py`).
 - ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
 - User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
+
+## Phase 7: Demo UI (React + TypeScript)
+
+Branch `phase-7-ui`. Decisions (2026-10-27, user):
+- **React + TypeScript instead of Streamlit** (to show full-stack range to AI-engineer recruiters; ~2.5–3× the UI work). PLAN.md updated; demo on `localhost:8080`.
+- **Real model only**: no scripted demo. The user records one run-through at the end of the project for recruiters. A down LLM shows a plain error.
+- **Live node-by-node progress** in Diagnose (job store records each node's start/end while running; UI polls).
+- **Citations show the snippet and the manual page as an image** (new `GET /documents/{doc_id}/pages/{page}`).
+- No CORS: nginx (compose) and Vite's dev server proxy `/api` to FastAPI, so the browser sees one origin.
+
+Order of work:
+1. Design doc + PLAN/PROGRESS updates.
+2. **Tests first:** live progress in the job store + graph `on_event` + `current_node` in `GET /jobs/{id}`.
+3. **Tests first:** page image endpoint (pypdfium2, LRU cache, 404s).
+4. Node (nvm) + Vite `react-ts` scaffold, ESLint/Prettier/tsc, `make ui-*` targets.
+5. OpenAPI → TypeScript types, typed client, CI drift check.
+6. **Tests first:** timeline state + work-order rules as pure functions.
+7. Search tab + citation viewer.
+8. Ask tab.
+9. Diagnose tab (polling, timeline, work order).
+10. `ui/Dockerfile` (nginx-unprivileged), compose service, CI `ui` job.
+11. Live check with a real model (quote pod price first), Phase 7 acceptance, PR → stop for review.
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
 
 ## Phase 6: Multi-agent graph (LangGraph)
 
