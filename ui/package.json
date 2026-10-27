@@ -18,7 +18,10 @@
     "gen:types": "openapi-typescript openapi.json -o src/api/schema.d.ts --default-non-nullable false"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
     "@tanstack/react-query": "5.104.2",
+    "lucide-react": "1.56.0",
     "openapi-fetch": "0.17.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

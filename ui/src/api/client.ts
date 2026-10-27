@@ -94,7 +94,10 @@ export interface ApiOptions {
 export function createApi({ baseUrl, fetch }: ApiOptions = {}) {
   const client = createClient<paths>({
     baseUrl: baseUrl ?? `${window.location.origin}/api`,
-    ...(fetch ? { fetch } : {}),
+    // openapi-fetch keeps the fetch it is given at creation. Look the global one up at
+    // call time instead, so anything that wraps fetch later (test mocks, monitoring)
+    // still sees the requests.
+    fetch: fetch ?? ((request: Request) => globalThis.fetch(request)),
   })
   return {
     health: () => call(client.GET('/health')),
