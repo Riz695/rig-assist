@@ -207,11 +207,10 @@ def run_safety(
     ]
 
     def numbers_in_range(review: SafetyReview) -> None:
-        wrong = [n for n in review.blocked_action_numbers if n > len(actions)]
+        wrong = [b.number for b in review.blocked if b.number > len(actions)]
         if wrong:
             raise ValueError(
-                f"blocked_action_numbers {wrong} don't exist: there are {len(actions)} "
-                "proposed actions"
+                f"blocked numbers {wrong} don't exist: there are {len(actions)} proposed actions"
             )
 
     review = complete_structured(

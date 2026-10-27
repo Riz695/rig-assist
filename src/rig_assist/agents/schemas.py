@@ -71,7 +71,11 @@ class TriageResult(_Strict):
     equipment_id: Text | None = None
     symptoms: list[Text]
     operating_context: Text | None = None
-    open_questions: list[Text]  # critical information missing; non-empty = ask, don't guess
+    open_questions: list[Text]  # shown in the work order; they don't stop the diagnosis
+    # True only when the equipment or the problem can't be identified: then the graph asks
+    # instead of diagnosing. No default, so the model must decide (run 1: questions alone
+    # used to stop the graph, skipping the safety review on urgent hazards).
+    critical_info_missing: StrictBool
 
 
 class SearchPlan(_Strict):
@@ -90,12 +94,21 @@ class Diagnosis(_Strict):
     recommended_actions: list[Text]
 
 
+class BlockedAction(_Strict):
+    # 1-based number of one of the diagnosis's recommended actions: a number, not reworded
+    # text, so a paraphrase can't slip past the block.
+    number: Annotated[int, Field(ge=1)]
+    hazard: Text  # what doing it would endanger: blocks need a hazard, not a preference
+
+
+class OtherBlockedAction(_Strict):
+    action: Text  # an unsafe action nobody proposed (e.g. the technician's own plan)
+    hazard: Text
+
+
 class SafetyReview(_Strict):
     warnings: list[Text]
-    # 1-based numbers of the diagnosis's recommended actions to block: numbers, not
-    # reworded text, so a paraphrase can't slip past the block.
-    blocked_action_numbers: list[Annotated[int, Field(ge=1)]]
-    # Unsafe actions that weren't proposed (e.g. from the technician's own description).
-    other_blocked_actions: list[Text]
+    blocked: list[BlockedAction]
+    other_blocked: list[OtherBlockedAction]
     hazard: StrictBool  # a hazard the technician must not handle alone → escalate
     evidence: list[EvidenceRef]

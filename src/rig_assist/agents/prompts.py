@@ -13,20 +13,25 @@ _ROLE = (
 TRIAGE_PROMPT = f"""{_ROLE} Your job is triage: read the technician's description and \
 pull out the facts.
 
-- equipment: the equipment as named (e.g. "triplex mud pump", "annular BOP").
+- equipment: the equipment as named (e.g. "triplex mud pump", "annular BOP"). If no \
+equipment is named, the system or area involved (e.g. "mud system", "well", "cellar"). \
+Never null.
 - equipment_id: a tag or number if one is given (e.g. "MP-2"), else null.
 - symptoms: each observed problem, short, in the technician's terms.
 - operating_context: what was going on (operation, depth, pressures, recent work), or null.
-- open_questions: ask ONLY when critical information is missing, meaning you cannot tell \
-which kind of equipment it is or what the problem is. Then ask short, specific questions. \
-Never ask for nice-to-have details; leave the list empty when the description is enough \
-to start diagnosing.
+- open_questions: short, specific questions whose answers would sharpen the diagnosis \
+(may be empty). They are passed on; they do not stop the diagnosis.
+- critical_info_missing: true ONLY if you cannot tell what equipment or system is involved \
+or what the problem is, so diagnosing would be guessing. If there is any hazard, alarm or \
+unsafe intention in the description, it is false: the case must go on to diagnosis and \
+safety review.
 
 Do not diagnose. Do not invent facts that aren't in the description.
 
 Reply with only this JSON object, no other text:
 {{"equipment": "...", "equipment_id": "..." or null, "symptoms": ["..."], \
-"operating_context": "..." or null, "open_questions": ["..."]}}"""
+"operating_context": "..." or null, "open_questions": ["..."], \
+"critical_info_missing": true or false}}"""
 
 SEARCH_PROMPT = f"""{_ROLE} Your job is to search the equipment manuals for evidence \
 that will help diagnose the problem. You see the problem and the excerpts found so far \
@@ -64,16 +69,20 @@ and procedures (isolation, bleeding down pressure, lockout/tagout, permits, lift
 well control).
 
 - warnings: the precautions the technician must follow, each short and specific.
-- blocked_action_numbers: the numbers of proposed actions that are unsafe as written \
-(e.g. working on pressurised equipment, bypassing a safety device, skipping isolation). \
-Block rather than rewrite; put the safe way to do it in warnings.
-- other_blocked_actions: unsafe actions that were NOT proposed but that the technician \
-mentioned or is likely to try, written as the action (e.g. "Bypass the pressure relief \
-valve").
+- blocked: the proposed actions that are UNSAFE as written, by number, each with the \
+hazard it creates: doing it would put people, the well or the equipment at immediate risk \
+(e.g. working on pressurised or moving equipment, bypassing a safety device, skipping \
+isolation or gas testing). Do NOT block an action that is only unreliable, ineffective, \
+incomplete or not the best choice: keep it and add a warning instead. Block rather than \
+rewrite; put the safe way to do it in warnings.
+- other_blocked: unsafe actions that were NOT proposed but that the technician mentioned, \
+intends or is likely to try, each written as the action (e.g. "Bypass the pressure relief \
+valve") with its hazard.
 - hazard: true if there is a hazard the technician should not handle alone (well control, \
 loss of containment, H2S, stored pressure that can't be confirmed released), else false.
 - evidence: the excerpts the warnings and blocks rely on, by doc_id and page.
 
 Reply with only this JSON object, no other text:
-{{"warnings": ["..."], "blocked_action_numbers": [1], "other_blocked_actions": ["..."], \
-"hazard": true or false, "evidence": [{{"doc_id": "...", "page": 1}}]}}"""
+{{"warnings": ["..."], "blocked": [{{"number": 1, "hazard": "..."}}], \
+"other_blocked": [{{"action": "...", "hazard": "..."}}], "hazard": true or false, \
+"evidence": [{{"doc_id": "...", "page": 1}}]}}"""

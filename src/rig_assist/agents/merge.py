@@ -7,7 +7,7 @@
 - **Citation integrity:** every citation is a retrieved chunk's page, with that chunk's
   text as the snippet. Evidence on a page that wasn't retrieved is dropped.
 
-Without a diagnosis (triage found critical information missing) the work order carries
+Without a diagnosis (triage flagged critical information missing) the work order carries
 the open questions only, and isn't escalated: it asks before anything is diagnosed.
 """
 
@@ -98,12 +98,12 @@ def build_work_order(
         raise ValueError("a diagnosis needs a safety review before it becomes a work order")
 
     proposed = proposed_actions(diagnosis)
-    for number in safety.blocked_action_numbers:
+    numbers = sorted({block.number for block in safety.blocked})
+    for number in numbers:
         if number > len(proposed):
             raise ValueError(f"safety blocked action {number}; only {len(proposed)} proposed")
     blocked = _unique(
-        [proposed[n - 1] for n in sorted(set(safety.blocked_action_numbers))]
-        + safety.other_blocked_actions
+        [proposed[n - 1] for n in numbers] + [other.action for other in safety.other_blocked]
     )
     blocked_keys = {normalise_action(a) for a in blocked}
     recommended = [a for a in proposed if normalise_action(a) not in blocked_keys]

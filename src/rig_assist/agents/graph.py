@@ -1,9 +1,10 @@
 """The troubleshooting graph (LangGraph): triage → retrieval → diagnosis → safety → report.
 
-One routing decision: when triage finds critical information missing (open questions),
-the graph goes straight to the report, which then carries only those questions. The
-nodes are the plain functions in `nodes.py`; the report is `merge.build_work_order`, so
-safety precedence, escalation and citation integrity are enforced in code.
+One routing decision: when triage flags critical information missing (it can't tell the
+equipment or the problem), the graph goes straight to the report, which then carries only
+the open questions. Other open questions don't stop the graph. The nodes are the plain
+functions in `nodes.py`; the report is `merge.build_work_order`, so safety precedence,
+escalation and citation integrity are enforced in code.
 
 Each node returns only what it adds to the state; `steps` (per-node usage and time)
 accumulates through a reducer. With a tracer, each node is a span, and the LLM and the
@@ -168,7 +169,7 @@ class TroubleshootingGraph:
 
     @staticmethod
     def _after_triage(state: State) -> NodeName:
-        return "report" if state["triage"].open_questions else "retrieval"
+        return "report" if state["triage"].critical_info_missing else "retrieval"
 
     def _build(self) -> Any:
         graph = StateGraph(State)
