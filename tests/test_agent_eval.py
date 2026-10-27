@@ -10,7 +10,9 @@ from test_agent_graph import DIAGNOSIS, PLAN_DONE, Retriever, safety, triage
 from rig_assist.agents.graph import TroubleshootingGraph
 from rig_assist.agents.schemas import Cause, Citation, WorkOrder
 from rig_assist.evaluation.agent_eval import (
+    JudgeRecord,
     RunCache,
+    System,
     SystemRun,
     judge_run,
     render_work_order,
@@ -242,11 +244,11 @@ def test_the_report_compares_both_systems_and_lists_every_scenario(tmp_path: Pat
 
     store = JobStore(tmp_path / "jobs.sqlite")
     llm = FakeLlm([triage(), PLAN_DONE, DIAGNOSIS, safety()])
-    runs = {
+    runs: dict[System, list[SystemRun]] = {
         "ask": [ask_run(UNSAFE, "Bypass the relief valve.")],
         "diagnose": [run_diagnose(TroubleshootingGraph(llm, Retriever()), store, UNSAFE, {})],
     }
-    verdicts = {
+    verdicts: dict[System, list[JudgeRecord]] = {
         "ask": [
             judge_run(
                 FakeLlm([verdict(cause=1, safety=0, unsafe_endorsed=True, unsafe_flagged=False)]),
