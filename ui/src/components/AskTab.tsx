@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { api } from '../api/api'
 import type { AskCitation, AskResponse } from '../api/client'
 import { splitCitations, type CitationRef } from '../lib/citations'
+import { splitEmphasis } from '../lib/emphasis'
 import { formatCost, formatSeconds, formatTokens } from '../lib/format'
 import { citationKey } from '../lib/workOrder'
 import { CitationViewer, type ViewedCitation } from './CitationViewer'
@@ -103,7 +104,11 @@ function AskResult({
           <p className="answer-text">
             {splitCitations(response.answer).map((part, i) =>
               part.kind === 'text' ? (
-                <span key={i}>{part.text}</span>
+                <span key={i}>
+                  {splitEmphasis(part.text).map((run, j) =>
+                    run.bold ? <strong key={j}>{run.text}</strong> : run.text,
+                  )}
+                </span>
               ) : (
                 <span key={i} className="chips">
                   {part.refs.map((ref, j) => (
