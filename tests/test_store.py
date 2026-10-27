@@ -90,3 +90,18 @@ def test_unsafe_doc_ids_are_rejected(tmp_path: Path, bad_id: str) -> None:
     """doc_id becomes a file name; it must never point outside the store."""
     with pytest.raises(ValueError, match="doc_id"):
         IndexStore(tmp_path).put(make_info(bad_id), [])
+
+
+def test_one_document_by_id(tmp_path: Path) -> None:
+    store = IndexStore(tmp_path)
+    store.put(make_info("drilling-manual"), make_chunks("drilling-manual"))
+    assert store.document("drilling-manual") == make_info("drilling-manual")
+    assert store.document("no-such-manual") is None
+
+
+@pytest.mark.parametrize("doc_id", ["..", "../index", "Drilling_Manual", ""])
+def test_a_doc_id_that_is_not_a_slug_is_never_looked_up(tmp_path: Path, doc_id: str) -> None:
+    store = IndexStore(tmp_path / "index")
+    (tmp_path / "index").mkdir()
+    (tmp_path / "x.json").write_text("{}")  # would be reachable through a bad id
+    assert store.document(doc_id) is None

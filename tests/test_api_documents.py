@@ -326,3 +326,60 @@ def test_swagger_documents_the_new_endpoints_with_examples(client: TestClient) -
     assert search_request.get("examples") or any(
         "examples" in prop for prop in search_request["properties"].values()
     )
+
+
+# --- GET /documents/{doc_id}/pages/{page} -------------------------------------
+
+
+def page_image(client: TestClient, doc_id: str, page: int) -> Response:
+    return client.get(f"/documents/{doc_id}/pages/{page}")
+
+
+def test_a_page_comes_back_as_a_png_image(client: TestClient) -> None:
+    upload(client, "Pump_Manual.pdf", PUMP_MANUAL)
+    response = page_image(client, "pump-manual", 1)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert "max-age" in response.headers["cache-control"]
+
+
+def test_each_page_has_its_own_image(client: TestClient) -> None:
+    upload(client, "Pump_Manual.pdf", PUMP_MANUAL)
+    assert (
+        page_image(client, "pump-manual", 1).content != page_image(client, "pump-manual", 2).content
+    )
+
+
+def test_a_reuploaded_manual_shows_its_new_pages(client: TestClient) -> None:
+    upload(client, "Pump_Manual.pdf", PUMP_MANUAL)
+    before = page_image(client, "pump-manual", 1).content
+    upload(client, "Pump_Manual.pdf", build_pdf([["Revised 3.1", "Replace liners weekly."]]))
+    assert page_image(client, "pump-manual", 1).content != before
+
+
+def test_an_unknown_document_is_404(client: TestClient) -> None:
+    response = page_image(client, "no-such-manual", 1)
+    assert response.status_code == 404
+    assert "no-such-manual" in response.json()["detail"]
+
+
+def test_a_page_past_the_end_is_404(client: TestClient) -> None:
+    upload(client, "Pump_Manual.pdf", PUMP_MANUAL)
+    response = page_image(client, "pump-manual", 3)
+    assert response.status_code == 404
+    assert "2 pages" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("page", ["0", "-1", "two"])
+def test_an_invalid_page_number_is_422(client: TestClient, page: str) -> None:
+    upload(client, "Pump_Manual.pdf", PUMP_MANUAL)
+    assert client.get(f"/documents/pump-manual/pages/{page}").status_code == 422
+
+
+def test_a_pdf_removed_from_disk_is_404(client: TestClient, settings: Settings) -> None:
+    upload(client, "Pump_Manual.pdf", PUMP_MANUAL)
+    (settings.data_raw_dir / "Pump_Manual.pdf").unlink()
+    response = page_image(client, "pump-manual", 1)
+    assert response.status_code == 404
+    assert "PDF" in response.json()["detail"]
