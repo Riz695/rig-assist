@@ -15,7 +15,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:types": "openapi-typescript openapi.json -o src/api/schema.d.ts"
+    "gen:types": "openapi-typescript openapi.json -o src/api/schema.d.ts --default-non-nullable false"
   },
   "dependencies": {
     "openapi-fetch": "0.17.0",

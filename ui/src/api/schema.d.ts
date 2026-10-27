@@ -204,13 +204,13 @@ export interface components {
              * @default hybrid_rerank
              * @enum {string}
              */
-            mode: "bm25" | "dense" | "hybrid" | "hybrid_rerank";
+            mode?: "bm25" | "dense" | "hybrid" | "hybrid_rerank";
             /**
              * Top K
              * @description How many chunks the LLM gets as context.
              * @default 5
              */
-            top_k: number;
+            top_k?: number;
         };
         /** AskResponse */
         AskResponse: {
@@ -250,7 +250,7 @@ export interface components {
              * Disclaimer
              * @default Rig Assist is not a safety-certified system. Check every answer against the cited manual pages and follow site procedures and your permit-to-work system.
              */
-            disclaimer: string;
+            disclaimer?: string;
         };
         /** AskUsage */
         AskUsage: {
@@ -445,7 +445,7 @@ export interface components {
              * Disclaimer
              * @default Rig Assist is not a safety-certified system. Check every answer against the cited manual pages and follow site procedures and your permit-to-work system.
              */
-            disclaimer: string;
+            disclaimer?: string;
         };
         /** JobStep */
         JobStep: {
@@ -547,14 +547,14 @@ export interface components {
              * @description How many chunks to return.
              * @default 5
              */
-            top_k: number;
+            top_k?: number;
             /**
              * Mode
              * @description Retrieval method. 'hybrid_rerank' (default): hybrid's top 20 reordered by a cross-encoder; most accurate on the eval set, about 2 s per query on CPU. 'hybrid': BM25 and dense fused by reciprocal rank fusion (~0.1 s). 'dense': embedding similarity. 'bm25': keyword match, the only mode that works without Qdrant.
              * @default hybrid_rerank
              * @enum {string}
              */
-            mode: "bm25" | "dense" | "hybrid" | "hybrid_rerank";
+            mode?: "bm25" | "dense" | "hybrid" | "hybrid_rerank";
         };
         /** SearchResponse */
         SearchResponse: {
