@@ -110,3 +110,11 @@ describe('the form', () => {
     expect(screen.getByRole('button', { name: 'Ask' })).toBeEnabled()
   })
 })
+
+test("the model's **bold** markdown is shown bold, not as asterisks", async () => {
+  askReturns({ ...ANSWER, answer: '**Steps:** close the BOP [drilling-manual p.49].' })
+  await ask()
+  const answer = await screen.findByRole('region', { name: 'Answer' })
+  expect(within(answer).getByText('Steps:').tagName).toBe('STRONG')
+  expect(answer).not.toHaveTextContent('**')
+})
