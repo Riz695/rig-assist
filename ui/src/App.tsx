@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { AskTab } from './components/AskTab'
+import { DiagnoseTab } from './components/DiagnoseTab'
 import { Header } from './components/Header'
 import { SearchTab } from './components/SearchTab'
 
@@ -55,7 +56,7 @@ export default function App() {
           >
             {tab === 'Search' && <SearchTab />}
             {tab === 'Ask' && <AskTab />}
-            {tab === 'Diagnose' && <p className="muted">Coming in the next task.</p>}
+            {tab === 'Diagnose' && <DiagnoseTab />}
           </section>
         ))}
       </main>

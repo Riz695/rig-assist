@@ -16,3 +16,15 @@ export function errorHint(error: unknown): string | null {
   }
   return null
 }
+
+/** What to do about a failed /diagnose job, from its stored error ("<Type>: <message>"). */
+export function jobErrorHint(error: string | null): string | null {
+  if (!error) return null
+  if (error.startsWith('LlmError')) {
+    return 'The model server did not answer: start it (docs/llm-gpu.md), then submit again.'
+  }
+  if (error.startsWith('StructuredOutputError')) {
+    return "The model's reply was invalid twice. Try again, or describe the problem differently."
+  }
+  return null
+}
