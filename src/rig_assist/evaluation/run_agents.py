@@ -60,6 +60,14 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:12]
 
 
+def agent_prompts_sha() -> str:
+    """Hash of every agent prompt: the `/diagnose` version a cached run was made with."""
+    text = "".join(
+        getattr(agent_prompts, name) for name in dir(agent_prompts) if name.endswith("_PROMPT")
+    )
+    return _sha(text)
+
+
 def _ratio(count: int, n: int) -> str:
     return f"{count}/{n}"
 
@@ -216,9 +224,6 @@ def main(argv: list[str] | None = None) -> int:
     tracer = make_tracer(settings)
     pipeline = RagPipeline(retriever, llm, top_k=TOP_K, prices=settings.llm_prices)
     graph = TroubleshootingGraph(llm, retriever, tracer=tracer)
-    agent_prompt_text = "".join(
-        getattr(agent_prompts, name) for name in dir(agent_prompts) if name.endswith("_PROMPT")
-    )
     config = {
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm_model,
@@ -227,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         "top_k": str(TOP_K),
         "reranker_model": settings.reranker_model,
         "rag_prompt_sha256": _sha(SYSTEM_PROMPT),
-        "agent_prompts_sha256": _sha(agent_prompt_text),
+        "agent_prompts_sha256": agent_prompts_sha(),
     }
     judge_config = {
         "judge_model": settings.llm_model,
