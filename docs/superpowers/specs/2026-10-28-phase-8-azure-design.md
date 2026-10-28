@@ -23,8 +23,8 @@ a scripted browser (as in the Phase 7 live check) against the Azure URL; it is r
 - **Only the user's IP** can reach the site (Container Apps ingress IP restriction).
 - **Bicep** for the infrastructure.
 - **The phase spans the user's merge** (two PRs): the pipeline is first tested from the
-  `phase-8-azure` branch (manual `workflow_dispatch` trigger + a federated credential for that
-  branch); the user merges the Phase 8 PR, and that merge is the first real push-to-`main`
+  `phase-8-azure` branch (a `push` trigger limited to that branch + a federated credential for it;
+  GitHub allows `workflow_dispatch` only for workflow files already on `main`); the user merges the Phase 8 PR, and that merge is the first real push-to-`main`
   deploy, verified; then the recording, then the teardown, then a small closing PR (notes,
   PROGRESS). Sign up for Azure when the branch work is ready to deploy.
 - **Claude runs the Azure commands** after the user's one-time `az login` (run with `!` in the
@@ -155,8 +155,9 @@ flowchart LR
   better story); a full redeploy on every push would reset the per-session settings (IP
   allowlist, `LLM_BASE_URL`, min replicas); and the user's IP would otherwise sit in public
   Actions logs.
-- `deploy.yml`: on push to `main` after CI succeeds (`workflow_run`), and on manual
-  `workflow_dispatch` (for testing from `phase-8-azure`), **only if** the repo variable
+- `deploy.yml`: on push to `main` after CI succeeds (`workflow_run`), on push to
+  `phase-8-azure` (pre-merge testing; removed after the merge), and on manual
+  `workflow_dispatch` (works once the file is on `main`), **only if** the repo variable
   `AZURE_DEPLOY_ENABLED` is `true`: OIDC login (`azure/login`), build and push both images to
   ACR tagged with the commit SHA, update the `ui` and `api` Container Apps to the new tags,
   then verify **through Azure** (new revision provisioned and running, replica healthy, `/ready`
