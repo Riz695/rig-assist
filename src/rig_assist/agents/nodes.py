@@ -222,11 +222,6 @@ def run_safety(
     return Safety(review, new_hits)
 
 
-def _copy_key(text: str) -> str:
-    """A copied action matches whatever its case, spacing, end punctuation or quotes."""
-    return normalise_action(text).strip(" .;:'\"")
-
-
 def check_verdicts(review: SafetyReview, actions: Sequence[str]) -> None:
     """Exactly one verdict per numbered action, each copying the action it judges.
     Raises ValueError with what to fix: `complete_structured` sends it back for the retry."""
@@ -244,7 +239,7 @@ def check_verdicts(review: SafetyReview, actions: Sequence[str]) -> None:
         raise ValueError(f"verdicts are missing for actions {missing}: give one per action")
     for v in review.verdicts:
         expected = actions[v.number - 1]
-        if _copy_key(v.action) != _copy_key(expected):
+        if normalise_action(v.action) != normalise_action(expected):
             raise ValueError(
                 f"verdict {v.number} copies {v.action!r}, but action {v.number} is "
                 f"{expected!r}: copy each action exactly as numbered"

@@ -32,8 +32,13 @@ class Cause(_Strict):
 
 
 def normalise_action(action: str) -> str:
-    """Case and spacing don't make two actions different."""
-    return " ".join(action.split()).casefold()
+    """Case, spacing, end punctuation and surrounding quotes don't make two actions different.
+
+    One definition for every comparison (merge, de-duplication, the work order's check, the
+    safety node's copy check), so a step can't be blocked in one place and recommended in
+    another because of a trailing full stop.
+    """
+    return " ".join(action.split()).casefold().strip(" .;:'\"")
 
 
 class WorkOrder(_Strict):
