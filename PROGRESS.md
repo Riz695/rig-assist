@@ -43,7 +43,7 @@ Why: the safety node blocked by number only; eval run 2 hand audit found 12 of 1
 
 ### Safety fix: resume here (written 2026-10-27 for the next session)
 
-- **Branch** `fix-safety-overblocking`, pushed. All 5 tasks done 2026-10-28; whole-branch review, then PR into `main` (never merge). Base `main` at `ab588bf`.
+- **Branch** `fix-safety-overblocking`, pushed. All 5 tasks done 2026-10-28, reviewed; **[PR #10](https://github.com/Riz695/rig-assist/pull/10) open, waiting for the user's review** (never merge). Base `main` at `ab588bf`.
 - **Plan:** `docs/superpowers/plans/2026-10-27-safety-verdicts.md` (spec: `docs/superpowers/specs/2026-10-27-safety-verdicts-design.md`). **Execution: Native** (user's choice): implement each task in-session with the `superpowers:executing-plans` skill + TDD, teaching-mode explanation + Obsidian note after each task, then wait for "continue". One whole-branch review (fresh subagent, most capable model) before the PR.
 - **Ledger:** `.superpowers/sdd/2026-10-27-safety-verdicts/progress.md` (git-ignored; holds `Task 1: complete` and the rulings). If it's gone, trust this file + `git log`.
 - **Done:** Task 1 (verdict per action), `6bc0ded` → `cb48c23`; Task 2 (block judge), `2ba974f` → `6ca1e66`; Task 3 (`make eval-safety`), `f6d2b70` → `343c529`; Task 4 (safety scenario set, **frozen 2026-10-28** after the user's spot-check), `d300178`; 885 tests pass, lint clean.
