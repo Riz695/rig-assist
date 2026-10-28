@@ -37,6 +37,14 @@ Running log of what's done, so any new session (or person) can pick up where the
 - ✅ `make lint` clean; `make test` 321 passed, 0 skipped (with data/raw present).
 - User set `OCR_MODE=missing` in `.env` (2026-10-24), matching how the v2 index was built.
 
+## Phase 8: Azure deployment + CD
+
+Branch `phase-8-azure`. Design (approved 2026-10-28): `docs/superpowers/specs/2026-10-28-phase-8-azure-design.md`; plan: `docs/superpowers/plans/2026-10-28-phase-8-azure.md` (8 tasks, **Native** execution, user's choice). Ledger: `.superpowers/sdd/2026-10-28-phase-8-azure/progress.md` (git-ignored). Teaching mode continues.
+
+| Task | Commits | Notes file (Obsidian) |
+|---|---|---|
+| `GET /ready` (readiness probe): 200 `ReadyResponse(status, chunks, vectors)` only when the BM25 index is loaded and Qdrant answers with vectors in the collection; 503 with the reason otherwise (nothing indexed / Qdrant unreachable, same wording as `/search` / collection missing or empty, named). Tests use real pieces: temp folders, in-memory Qdrant, a real upload, a client on a closed port. UI OpenAPI types regenerated. 891 tests | `df307d4` test → `e65924c` feat | `Tasks/P8 - Readiness endpoint.md` |
+
 ## Safety fix: a verdict per proposed action
 
 Why: the safety node blocked by number only; eval run 2 hand audit found 12 of 17 numbered blocks on a safe action, and the Phase 7 live check blocked "DO NOT approach the area without SCBA". User's choices (2026-10-27): **verdict per action + copy check** (1 call), measured by **a new frozen scenario set A/B (old node vs new) + the new node on the frozen 18**.
