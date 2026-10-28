@@ -82,7 +82,15 @@ DIAGNOSIS = json.dumps(
 SAFETY = json.dumps(
     {
         "warnings": ["Stop and bleed down the pump before opening the fluid end"],
-        "blocked": [{"number": 2, "hazard": "Opening the fluid end while it runs"}],
+        "verdicts": [
+            {"number": 1, "action": "Check the liners", "verdict": "safe", "hazard": None},
+            {
+                "number": 2,
+                "action": "Open the fluid end while running",
+                "verdict": "unsafe",
+                "hazard": "Opening the fluid end while it runs",
+            },
+        ],
         "other_blocked": [],
         "hazard": False,
         "evidence": [{"doc_id": "pump-manual", "page": 2}],

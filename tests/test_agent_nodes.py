@@ -9,12 +9,14 @@ import pytest
 from rig_assist.agents.nodes import (
     MAX_EVIDENCE,
     MAX_SEARCH_ROUNDS,
+    check_verdicts,
     run_diagnosis,
     run_retrieval,
     run_safety,
     run_triage,
 )
-from rig_assist.agents.schemas import Diagnosis, ProposedCause, TriageResult
+from rig_assist.agents.prompts import SAFETY_PROMPT
+from rig_assist.agents.schemas import Diagnosis, ProposedCause, SafetyReview, TriageResult
 from rig_assist.agents.structured import StructuredOutputError, complete_structured
 from rig_assist.ingestion.models import Chunk
 from rig_assist.llm.fake import FakeLlm
@@ -225,10 +227,25 @@ DIAGNOSIS = Diagnosis(
 )
 
 
+def verdict(number: int, action: str, hazard: str | None = None) -> dict[str, Any]:
+    return {
+        "number": number,
+        "action": action,
+        "verdict": "unsafe" if hazard else "safe",
+        "hazard": hazard,
+    }
+
+
+VERDICTS = [
+    verdict(1, "Inspect the liners"),
+    verdict(2, "Open the fluid end", "Opening a running pump"),
+]
+
+
 def safety_reply(**overrides: Any) -> str:
     data = {
         "warnings": ["Bleed down before opening"],
-        "blocked": [{"number": 2, "hazard": "Opening a running pump"}],
+        "verdicts": VERDICTS,
         "other_blocked": [],
         "hazard": True,
         "evidence": [{"doc_id": "pump", "page": 30}],
@@ -260,11 +277,69 @@ def test_safety_searches_the_manuals_for_hazards_and_returns_the_new_hits() -> N
     assert "Triplex mud pump" in query and "safety" in query.lower()
     assert [h.chunk.page for h in result.new_hits] == [30]  # page 12 was already known
     assert "[pump p.30]" in llm.calls[0][-1].content and "[pump p.12]" in llm.calls[0][-1].content
-    assert [b.number for b in result.review.value.blocked] == [2]
+    unsafe = [v.number for v in result.review.value.verdicts if v.verdict == "unsafe"]
+    assert unsafe == [2]
 
 
-def test_a_block_number_out_of_range_is_retried() -> None:
-    llm = FakeLlm([safety_reply(blocked=[{"number": 3, "hazard": "x"}]), safety_reply()])
+def test_a_verdict_number_out_of_range_is_retried() -> None:
+    extra = [*VERDICTS, verdict(3, "Open the fluid end", "x")]
+    llm = FakeLlm([safety_reply(verdicts=extra), safety_reply()])
     result = run_safety(llm, ScriptedRetriever(), DESCRIPTION, TRIAGE, DIAGNOSIS, [])
     assert result.review.attempts == 2
     assert "3" in llm.calls[1][-1].content
+
+
+def review(*verdicts: dict[str, Any]) -> SafetyReview:
+    return SafetyReview.model_validate(
+        {
+            "warnings": [],
+            "verdicts": list(verdicts),
+            "other_blocked": [],
+            "hazard": False,
+            "evidence": [],
+        }
+    )
+
+
+def test_every_proposed_action_needs_exactly_one_verdict() -> None:
+    actions = ["A", "B"]
+    with pytest.raises(ValueError, match=r"missing.*2"):
+        check_verdicts(review(verdict(1, "A")), actions)
+    with pytest.raises(ValueError, match="more than once"):
+        check_verdicts(review(verdict(1, "A"), verdict(1, "A"), verdict(2, "B")), actions)
+    with pytest.raises(ValueError, match="don't exist"):
+        check_verdicts(review(verdict(1, "A"), verdict(2, "B"), verdict(3, "C")), actions)
+    check_verdicts(review(verdict(1, "A"), verdict(2, "B", "x")), actions)  # complete: passes
+
+
+def test_a_copied_action_must_match_its_number() -> None:
+    with pytest.raises(ValueError, match=r"1.*'A'"):
+        check_verdicts(review(verdict(1, "B"), verdict(2, "B")), ["A", "B"])
+
+
+def test_a_copy_may_differ_in_case_spacing_and_end_punctuation() -> None:
+    actions = ["Perform atmospheric testing"]
+    check_verdicts(review(verdict(1, "  perform ATMOSPHERIC   testing. ")), actions)
+    check_verdicts(review(verdict(1, '"Perform atmospheric testing"')), actions)
+
+
+def test_no_proposed_actions_means_no_verdicts() -> None:
+    check_verdicts(review(), [])
+
+
+def test_a_wrong_copy_is_retried_once_then_fails() -> None:
+    bad = safety_reply(verdicts=[verdict(1, "Open the fluid end"), VERDICTS[1]])
+    llm = FakeLlm([bad, safety_reply()])
+    result = run_safety(llm, ScriptedRetriever(), DESCRIPTION, TRIAGE, DIAGNOSIS, [])
+    assert result.review.attempts == 2
+    assert "Inspect the liners" in llm.calls[1][-1].content  # the error names the right text
+    with pytest.raises(StructuredOutputError):
+        run_safety(FakeLlm([bad, bad]), ScriptedRetriever(), DESCRIPTION, TRIAGE, DIAGNOSIS, [])
+
+
+def test_the_safety_prompt_asks_for_a_verdict_on_each_numbered_action() -> None:
+    assert '"verdicts"' in SAFETY_PROMPT and "as written" in SAFETY_PROMPT.lower()
+    assert '"blocked"' not in SAFETY_PROMPT
+    llm = FakeLlm([safety_reply()])
+    run_safety(llm, ScriptedRetriever(), DESCRIPTION, TRIAGE, DIAGNOSIS, [])
+    assert llm.calls[0][0].content == SAFETY_PROMPT

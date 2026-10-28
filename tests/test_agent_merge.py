@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from rig_assist.agents.merge import build_work_order
 from rig_assist.agents.schemas import (
-    BlockedAction,
+    ActionVerdict,
     Citation,
     Diagnosis,
     EvidenceRef,
@@ -51,22 +51,33 @@ def ref(doc_id: str, page: int) -> EvidenceRef:
     return EvidenceRef(doc_id=doc_id, page=page)
 
 
+ACTIONS = [
+    "Inspect the liners",
+    "Open the fluid end to check the valves",
+    "Check suction pressure",
+]
+
+
 def diagnosis(**overrides: Any) -> Diagnosis:
     data: dict[str, Any] = {
         "causes": [
             ProposedCause(cause="Worn liner", likelihood="high", evidence=[ref("pump", 12)]),
         ],
-        "recommended_actions": [
-            "Inspect the liners",
-            "Open the fluid end to check the valves",
-            "Check suction pressure",
-        ],
+        "recommended_actions": ACTIONS,
     }
     return Diagnosis(**(data | overrides))
 
 
-def block(number: int) -> BlockedAction:
-    return BlockedAction(number=number, hazard="Opening a pressurised pump")
+def verdicts(actions: list[str], *unsafe: int) -> list[ActionVerdict]:
+    """One verdict per action, in order: the numbers in `unsafe` are unsafe."""
+    return [
+        ActionVerdict(
+            number=n, action=action, verdict="unsafe", hazard="Opening a pressurised pump"
+        )
+        if n in unsafe
+        else ActionVerdict(number=n, action=action, verdict="safe", hazard=None)
+        for n, action in enumerate(actions, start=1)
+    ]
 
 
 def other(action: str) -> OtherBlockedAction:
@@ -76,7 +87,7 @@ def other(action: str) -> OtherBlockedAction:
 def safety(**overrides: Any) -> SafetyReview:
     data: dict[str, Any] = {
         "warnings": ["Bleed the pump down to zero pressure before opening it"],
-        "blocked": [],
+        "verdicts": verdicts(ACTIONS),
         "other_blocked": [],
         "hazard": False,
         "evidence": [ref("pump", 30)],
@@ -88,9 +99,44 @@ def safety(**overrides: Any) -> SafetyReview:
 
 
 def test_a_blocked_action_is_never_recommended() -> None:
-    order = build_work_order(TRIAGE, HITS, diagnosis(), safety(blocked=[block(2)], hazard=True))
+    review = safety(verdicts=verdicts(ACTIONS, 2), hazard=True)
+    order = build_work_order(TRIAGE, HITS, diagnosis(), review)
     assert order.recommended_actions == ["Inspect the liners", "Check suction pressure"]
     assert order.blocked_actions == ["Open the fluid end to check the valves"]
+
+
+def test_only_unsafe_verdicts_are_blocked() -> None:
+    order = build_work_order(TRIAGE, HITS, diagnosis(), safety(verdicts=verdicts(ACTIONS, 2, 3)))
+    assert order.blocked_actions == [ACTIONS[1], ACTIONS[2]]
+    assert order.recommended_actions == [ACTIONS[0]]
+
+
+def test_a_safe_action_is_never_blocked_by_its_verdict() -> None:
+    order = build_work_order(TRIAGE, HITS, diagnosis(), safety())
+    assert order.blocked_actions == []
+    assert order.recommended_actions == ACTIONS
+
+
+def test_a_free_text_block_wins_over_a_safe_verdict() -> None:
+    review = safety(other_blocked=[other("INSPECT the liners")])  # verdict 1 is "safe"
+    order = build_work_order(TRIAGE, HITS, diagnosis(), review)
+    assert order.blocked_actions == ["INSPECT the liners"]
+    assert "Inspect the liners" not in order.recommended_actions
+
+
+def test_a_free_text_block_with_end_punctuation_or_quotes_still_wins() -> None:
+    for written in ("Inspect the liners.", '"Inspect the liners"'):
+        review = safety(other_blocked=[other(written)])  # verdict 1 is "safe"
+        order = build_work_order(TRIAGE, HITS, diagnosis(), review)
+        assert order.blocked_actions == [written]
+        assert "Inspect the liners" not in order.recommended_actions
+
+
+def test_no_proposed_actions_blocks_only_free_text() -> None:
+    review = safety(verdicts=[], other_blocked=[other("Bypass the relief valve")])
+    order = build_work_order(TRIAGE, HITS, diagnosis(recommended_actions=[]), review)
+    assert order.recommended_actions == []
+    assert order.blocked_actions == ["Bypass the relief valve"]
 
 
 def test_safety_can_block_an_action_the_diagnosis_did_not_propose() -> None:
@@ -109,7 +155,11 @@ def test_a_blocked_action_repeated_in_other_words_of_case_is_still_removed() -> 
         TRIAGE,
         HITS,
         diagnosis(recommended_actions=["Inspect the liners", "Bypass  the RELIEF valve"]),
-        safety(other_blocked=[other("bypass the relief valve")], hazard=True),
+        safety(
+            verdicts=verdicts(["Inspect the liners", "Bypass  the RELIEF valve"]),
+            other_blocked=[other("bypass the relief valve")],
+            hazard=True,
+        ),
     )
     assert order.recommended_actions == ["Inspect the liners"]
     assert order.blocked_actions == ["bypass the relief valve"]
@@ -122,7 +172,8 @@ def test_safety_warnings_are_kept() -> None:
 
 def test_a_block_number_outside_the_proposed_actions_is_an_error() -> None:
     with pytest.raises(ValueError, match="action 4"):
-        build_work_order(TRIAGE, HITS, diagnosis(), safety(blocked=[block(4)]))
+        review = safety(verdicts=[*verdicts(ACTIONS), *verdicts([*ACTIONS, "Extra"], 4)[3:]])
+        build_work_order(TRIAGE, HITS, diagnosis(), review)
 
 
 def test_duplicate_recommended_actions_are_merged() -> None:
@@ -257,7 +308,7 @@ def test_node_outputs_are_strict() -> None:
         SafetyReview.model_validate(
             {
                 "warnings": [],
-                "blocked": [{"number": 0, "hazard": "x"}],
+                "verdicts": [{"number": 0, "action": "x", "verdict": "safe", "hazard": None}],
                 "other_blocked": [],
                 "hazard": False,
                 "evidence": [],
@@ -277,6 +328,8 @@ def test_node_outputs_are_strict() -> None:
 
 def test_a_block_or_triage_flag_must_be_stated() -> None:
     with pytest.raises(ValidationError):  # every block names the hazard it prevents
-        BlockedAction.model_validate({"number": 1, "hazard": ""})
+        ActionVerdict.model_validate(
+            {"number": 1, "action": "x", "verdict": "unsafe", "hazard": ""}
+        )
     with pytest.raises(ValidationError):  # the routing flag has no default
         TriageResult.model_validate({"equipment": "pump", "symptoms": [], "open_questions": []})

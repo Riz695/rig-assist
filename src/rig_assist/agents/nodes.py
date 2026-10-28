@@ -15,7 +15,13 @@ from rig_assist.agents.prompts import (
     SEARCH_PROMPT,
     TRIAGE_PROMPT,
 )
-from rig_assist.agents.schemas import Diagnosis, SafetyReview, SearchPlan, TriageResult
+from rig_assist.agents.schemas import (
+    Diagnosis,
+    SafetyReview,
+    SearchPlan,
+    TriageResult,
+    normalise_action,
+)
 from rig_assist.agents.structured import Structured, complete_structured
 from rig_assist.llm.models import LlmClient, Message, Usage
 from rig_assist.rag.prompt import citation_label, context_block
@@ -188,7 +194,7 @@ def run_safety(
     hits: Sequence[ScoredChunk],
 ) -> Safety:
     """Searches the manuals for the equipment's hazards and the proposed actions, then
-    reviews the actions against all the evidence. Blocks refer to the numbered list."""
+    reviews the actions against all the evidence: a verdict per numbered action."""
     actions = proposed_actions(diagnosis)
     query = f"{triage.equipment} safety hazards precautions warnings"
     if actions:
@@ -206,14 +212,35 @@ def run_safety(
         ),
     ]
 
-    def numbers_in_range(review: SafetyReview) -> None:
-        wrong = [b.number for b in review.blocked if b.number > len(actions)]
-        if wrong:
-            raise ValueError(
-                f"blocked numbers {wrong} don't exist: there are {len(actions)} proposed actions"
-            )
-
     review = complete_structured(
-        llm, messages, SafetyReview, NODE_MAX_TOKENS, check=numbers_in_range
+        llm,
+        messages,
+        SafetyReview,
+        NODE_MAX_TOKENS,
+        check=lambda review: check_verdicts(review, actions),
     )
     return Safety(review, new_hits)
+
+
+def check_verdicts(review: SafetyReview, actions: Sequence[str]) -> None:
+    """Exactly one verdict per numbered action, each copying the action it judges.
+    Raises ValueError with what to fix: `complete_structured` sends it back for the retry."""
+    numbers = [v.number for v in review.verdicts]
+    wrong = sorted({n for n in numbers if n > len(actions)})
+    if wrong:
+        raise ValueError(
+            f"verdict numbers {wrong} don't exist: there are {len(actions)} proposed actions"
+        )
+    repeated = sorted({n for n in numbers if numbers.count(n) > 1})
+    if repeated:
+        raise ValueError(f"verdict numbers {repeated} appear more than once: one per action")
+    missing = [n for n in range(1, len(actions) + 1) if n not in numbers]
+    if missing:
+        raise ValueError(f"verdicts are missing for actions {missing}: give one per action")
+    for v in review.verdicts:
+        expected = actions[v.number - 1]
+        if normalise_action(v.action) != normalise_action(expected):
+            raise ValueError(
+                f"verdict {v.number} copies {v.action!r}, but action {v.number} is "
+                f"{expected!r}: copy each action exactly as numbered"
+            )

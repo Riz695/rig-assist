@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from rig_assist.agents.schemas import Cause, Citation, WorkOrder
+from rig_assist.agents.schemas import ActionVerdict, Cause, Citation, WorkOrder
 from rig_assist.agents.structured import StructuredOutputError, complete_structured
 from rig_assist.llm.fake import FakeLlm
 from rig_assist.llm.models import Message, Usage
@@ -77,6 +77,32 @@ def test_an_action_cannot_be_both_recommended_and_blocked() -> None:
                 recommended_actions=["Open the pump under pressure"],
                 blocked_actions=["open the pump  under pressure"],  # case/space-insensitive
             )
+        )
+
+
+# --- the safety review's verdict per proposed action ---------------------------
+
+
+def test_an_unsafe_verdict_needs_a_hazard() -> None:
+    with pytest.raises(ValidationError, match="hazard"):
+        ActionVerdict(number=1, action="Open the fluid end", verdict="unsafe", hazard=None)
+
+
+def test_a_safe_verdict_has_no_hazard() -> None:
+    with pytest.raises(ValidationError, match="hazard"):
+        ActionVerdict(number=1, action="Inspect the liners", verdict="safe", hazard="x")
+    ok = ActionVerdict(number=1, action="Inspect the liners", verdict="safe", hazard=None)
+    assert ok.verdict == "safe"
+
+
+def test_a_verdict_rejects_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        ActionVerdict.model_validate(
+            {"number": 1, "action": "A", "verdict": "safe", "hazard": None, "why": "x"}
+        )
+    with pytest.raises(ValidationError):  # only "safe" or "unsafe"
+        ActionVerdict.model_validate(
+            {"number": 1, "action": "A", "verdict": "maybe", "hazard": None}
         )
 
 

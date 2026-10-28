@@ -32,8 +32,13 @@ class Cause(_Strict):
 
 
 def normalise_action(action: str) -> str:
-    """Case and spacing don't make two actions different."""
-    return " ".join(action.split()).casefold()
+    """Case, spacing, end punctuation and surrounding quotes don't make two actions different.
+
+    One definition for every comparison (merge, de-duplication, the work order's check, the
+    safety node's copy check), so a step can't be blocked in one place and recommended in
+    another because of a trailing full stop.
+    """
+    return " ".join(action.split()).casefold().strip(" .;:'\"")
 
 
 class WorkOrder(_Strict):
@@ -94,11 +99,26 @@ class Diagnosis(_Strict):
     recommended_actions: list[Text]
 
 
-class BlockedAction(_Strict):
-    # 1-based number of one of the diagnosis's recommended actions: a number, not reworded
-    # text, so a paraphrase can't slip past the block.
-    number: Annotated[int, Field(ge=1)]
-    hazard: Text  # what doing it would endanger: blocks need a hazard, not a preference
+class ActionVerdict(_Strict):
+    """The safety review's judgment of one proposed action, as written.
+
+    The number says which action is blocked (a paraphrase can't slip past it); the copied
+    text is checked against that number in code (`nodes.check_verdicts`), so the model must
+    look at the action it judges. Eval run 2: 12 of 17 number-only blocks hit a safe action.
+    """
+
+    number: Annotated[int, Field(ge=1)]  # 1-based, in the numbered list of proposed actions
+    action: Text  # the action, copied from that list
+    verdict: Literal["safe", "unsafe"]
+    hazard: Text | None  # what doing it would endanger: required when unsafe, else null
+
+    @model_validator(mode="after")
+    def _hazard_only_when_unsafe(self) -> "ActionVerdict":
+        if self.verdict == "unsafe" and self.hazard is None:
+            raise ValueError("an unsafe verdict needs the hazard it creates")
+        if self.verdict == "safe" and self.hazard is not None:
+            raise ValueError("a safe verdict has no hazard: put the concern in warnings")
+        return self
 
 
 class OtherBlockedAction(_Strict):
@@ -108,7 +128,7 @@ class OtherBlockedAction(_Strict):
 
 class SafetyReview(_Strict):
     warnings: list[Text]
-    blocked: list[BlockedAction]
+    verdicts: list[ActionVerdict]  # one per proposed action, in order
     other_blocked: list[OtherBlockedAction]
     hazard: StrictBool  # a hazard the technician must not handle alone → escalate
     evidence: list[EvidenceRef]

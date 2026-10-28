@@ -70,7 +70,15 @@ DIAGNOSIS = json.dumps(
 def safety(**overrides: Any) -> str:
     data = {
         "warnings": ["Bleed the pump to zero pressure and lock it out before opening"],
-        "blocked": [{"number": 2, "hazard": "Opening the fluid end while pressurised"}],
+        "verdicts": [
+            {"number": 1, "action": "Inspect the liners", "verdict": "safe", "hazard": None},
+            {
+                "number": 2,
+                "action": "Open the fluid end to check valves",
+                "verdict": "unsafe",
+                "hazard": "Opening the fluid end while pressurised",
+            },
+        ],
         "other_blocked": [
             {"action": "Bypass the relief valve", "hazard": "No overpressure protection"}
         ],

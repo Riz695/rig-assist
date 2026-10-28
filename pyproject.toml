@@ -82,7 +82,7 @@ known-first-party = ["rig_assist"]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers -m 'not slow'"  # slow tests: `make test-slow`
 markers = [
-    "slow: needs the train group and real models (ONNX export parity); not in `make test` or CI",
+    "slow: needs the train group and real models (ONNX export parity) or the real manuals (scenario files, about a minute); not in `make test` or CI",
     "integration: uses real data or models (manuals in data/raw, downloaded embedding models); skipped when unavailable",
 ]
 filterwarnings = [

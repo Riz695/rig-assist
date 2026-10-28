@@ -42,6 +42,15 @@ vLLM's official image, so there is no web terminal and no `pip install`:
 - **Boot:** the image was cached on the host; the 34.9 GiB of weights downloaded in 18 s.
   Then step 5 below, then step 6.
 
+**Better since 2026-10-28: keep the key out of the tool call with a RunPod secret.** Generate
+the key into `.env` (print only its fingerprint), have the user copy it into **RunPod console →
+Secrets → Create Secret** (e.g. `rig_vllm_key`), check it with `list-secrets`, and create the
+pod with `env: {VLLM_API_KEY: "{{ RUNPOD_SECRET_rig_vllm_key }}"}`. RunPod substitutes the value
+at boot. Pitfall seen: double-clicking the value in an editor stops at a `-`, so a key like
+`rig-…` lost its prefix; generate keys without `-` (e.g. `secrets.token_hex(32)`). A 401 in the step 5
+check with the right server means the secret and `.env` differ, not that the server is broken. Boot on 2026-10-28 (US-WA-1,
+image not cached): 7.5 min from create to a 401 on `/v1/models`.
+
 ## Manual steps (web terminal)
 
 ### 1. Deploy the pod

@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash  # nvm (for the UI's Node) only works in bash
 .DEFAULT_GOAL := help
-.PHONY: help install dev test test-slow lint format ui-install ui-types ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents pairs negatives train export export-base mlflow-ui up down
+.PHONY: help install dev test test-slow lint format ui-install ui-types ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents eval-safety pairs negatives train export export-base mlflow-ui up down
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -23,7 +23,7 @@ dev: ## Run the API locally with auto-reload on http://localhost:8000
 test: ## Run the test suite
 	uv run pytest
 
-test-slow: ## Slow tests only (train group, real models: ONNX export parity)
+test-slow: ## Slow tests only (train group, real models: ONNX export parity; real manuals: scenario files)
 	uv run --group train pytest -m slow
 
 lint: ## Lint, check formatting, and type-check (no files are changed)
@@ -72,6 +72,15 @@ eval-answers: ## Answer the eval set with /ask's pipeline, then LLM-judge the an
 
 eval-agents: ## /ask vs /diagnose on eval/scenarios.jsonl, LLM-judged (real LLM from .env; resumes) → eval/results/agents.md
 	uv run --group eval python eval/run_agent_eval.py
+
+# Blocking precision, one report per scenario set: the old node (main at ab588bf, run from a
+# git worktree) vs this one on the new set, and run 2 vs run 3 (this branch, 2026-10-28) on the frozen 18.
+SAFETY_NEW_SET ?= --run old=data/eval/safety-old --run new=data/eval/safety-new
+SAFETY_FROZEN ?= --run run2=data/eval/agents:58a301bac680 --run run3=data/eval/agents:d56504ec37f0
+
+eval-safety: ## Safety node blocking precision across cached /diagnose runs, LLM-judged (real LLM from .env) → eval/results/safety-verdicts*.md
+	uv run --group eval python eval/run_safety_compare.py --scenarios eval/scenarios-safety.jsonl $(SAFETY_NEW_SET) --out eval/results/safety-verdicts.md
+	uv run --group eval python eval/run_safety_compare.py --scenarios eval/scenarios.jsonl $(SAFETY_FROZEN) --out eval/results/safety-verdicts-frozen18.md
 
 pairs: ## Fine-tuning data: LLM-written queries per chunk (real LLM from .env; resumes) → data/training/pairs/
 	uv run python training/make_pairs.py
