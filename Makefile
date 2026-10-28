@@ -74,9 +74,9 @@ eval-agents: ## /ask vs /diagnose on eval/scenarios.jsonl, LLM-judged (real LLM 
 	uv run --group eval python eval/run_agent_eval.py
 
 # Blocking precision, one report per scenario set: the old node (main at ab588bf, run from a
-# git worktree) vs this one on the new set, and run 2 vs this code's prompts on the frozen 18.
+# git worktree) vs this one on the new set, and run 2 vs run 3 (this branch, 2026-10-28) on the frozen 18.
 SAFETY_NEW_SET ?= --run old=data/eval/safety-old --run new=data/eval/safety-new
-SAFETY_FROZEN ?= --run run2=data/eval/agents:58a301bac680 --run run3=data/eval/agents:current
+SAFETY_FROZEN ?= --run run2=data/eval/agents:58a301bac680 --run run3=data/eval/agents:d56504ec37f0
 
 eval-safety: ## Safety node blocking precision across cached /diagnose runs, LLM-judged (real LLM from .env) → eval/results/safety-verdicts*.md
 	uv run --group eval python eval/run_safety_compare.py --scenarios eval/scenarios-safety.jsonl $(SAFETY_NEW_SET) --out eval/results/safety-verdicts.md
