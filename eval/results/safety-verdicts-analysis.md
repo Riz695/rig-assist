@@ -1,8 +1,9 @@
 # Safety node fix: a verdict per action (analysis)
 
 Hand-written commentary on `safety-verdicts.md` (old vs new node on the new 12-scenario set),
-`safety-verdicts-frozen18.md` (run 2 vs run 3 on the frozen 18), `agents-safety-set.md` and
-`agents-run3.md`. Runs on 2026-10-28, Qwen3.6-35B-A3B-FP8 (vLLM 0.31.0, RTX 6000 Ada, thinking
+`safety-verdicts-frozen18.md` (run 2 vs run 3 on the frozen 18), and the agent reports
+`agents-safety-set-old.md` (old node), `agents-safety-set.md` (new node) and `agents-run3.md`.
+The hand verdict on every block is in `safety-verdicts-hand-audit.md`. Runs on 2026-10-28, Qwen3.6-35B-A3B-FP8 (vLLM 0.31.0, RTX 6000 Ada, thinking
 off) for every system and judge.
 
 **What changed:** the safety node used to name blocked actions by number; 12 of 17 numbered
@@ -23,7 +24,7 @@ judge's numbers are next to it.
 | Unsafe as written: hand (judge) | 18/36 = 50% (20/36) | **13/16 = 81%** (16/16) |
 | Safe actions blocked: hand (judge) | 18 (16) | **3** (0) |
 | Scenarios with a safe action blocked (hand) | 12/12 | **2/12** |
-| Temptation blocked (hand = judge) | 4/6 | **5/6** |
+| Temptation blocked² (hand = judge) | 4/6 | **5/6** |
 | Temptation flagged / endorsed (agent judge) | 6/6 / 0/6 | 6/6 / 0/6 |
 
 Paired by scenario, the new node blocks fewer safe actions in **11 of 12 scenarios, more in
@@ -34,7 +35,7 @@ none** (n10 ties at 2): exact sign test p ≈ 0.001.
 | Blocks | 39 | 22 |
 | Unsafe as written: hand (judge) | 27/39 = 69%¹ (23/39) | 14/22 = 64% (18/22) |
 | Safe actions blocked: hand (judge) | 12¹ (16) | 8 (4) |
-| Temptation blocked (judge) | 5/8 | 6/8 |
+| Temptation blocked² (judge) | 5/8 | 6/8 |
 | Cause correct (agent judge 2/2) | 15/18 | 17/18 |
 | Safety warnings, mean 0–2 | 1.72 | 1.89 |
 | Temptation flagged / endorsed | 8/8 / 0/8 | 8/8 / 0/8 |
@@ -44,6 +45,12 @@ none** (n10 ties at 2): exact sign test p ≈ 0.001.
 free-text blocks as a group ("sound"); run 3 was audited block by block, a little stricter
 (e.g. "enter the mixing tank to clean settled barite" counted as safe as written). Read the
 frozen-18 precision as roughly unchanged, with fewer blocks and fewer safe ones.
+
+² "Temptation blocked" here = at least one block **is** the tempted action (block judge). The
+agent reports' "Unsafe action blocked (in `blocked_actions`)" row is looser: any block at all in
+a temptation scenario. That's why `agents.md` shows 7/8 for run 2 and `agents-run3.md` 6/8
+(new set: 6/6 old, 5/6 new): the old node blocked *something* in more temptation scenarios,
+often a safe step, while blocking the temptation itself less often.
 
 ## What the numbers say
 
