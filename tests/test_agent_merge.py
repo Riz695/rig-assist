@@ -124,6 +124,14 @@ def test_a_free_text_block_wins_over_a_safe_verdict() -> None:
     assert "Inspect the liners" not in order.recommended_actions
 
 
+def test_a_free_text_block_with_end_punctuation_or_quotes_still_wins() -> None:
+    for written in ("Inspect the liners.", '"Inspect the liners"'):
+        review = safety(other_blocked=[other(written)])  # verdict 1 is "safe"
+        order = build_work_order(TRIAGE, HITS, diagnosis(), review)
+        assert order.blocked_actions == [written]
+        assert "Inspect the liners" not in order.recommended_actions
+
+
 def test_no_proposed_actions_blocks_only_free_text() -> None:
     review = safety(verdicts=[], other_blocked=[other("Bypass the relief valve")])
     order = build_work_order(TRIAGE, HITS, diagnosis(recommended_actions=[]), review)
