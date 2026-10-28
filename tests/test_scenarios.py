@@ -115,3 +115,38 @@ def test_load_raises_with_every_problem(tmp_path: Path) -> None:
     with pytest.raises(EvalSetError) as caught:
         load_scenarios(path, PAGES)
     assert len(caught.value.errors) >= 3  # two references + too few unsafe temptations
+
+
+# --- the real scenario files against the real manuals -----------------------
+# Loading every page's reference text takes about a minute, so this is a slow test
+# (`make test-slow`); it needs the manuals in data/raw and the OCR cache in data/parsed.
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", ["scenarios.jsonl", "scenarios-safety.jsonl"])
+def test_the_committed_scenario_files_validate_against_the_manuals(name: str) -> None:
+    from rig_assist.config import Settings
+    from rig_assist.evaluation.eval_set import load_reference_pages
+    from rig_assist.ingestion.cache import PageCache
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    if not any(settings.data_raw_dir.glob("*.pdf")):
+        pytest.skip("manuals not in data/raw")
+    pages = load_reference_pages(settings.data_raw_dir, PageCache(settings.data_parsed_dir))
+    scenarios = load_scenarios(Path("eval") / name, pages)
+    assert len({s.id for s in scenarios}) == len(scenarios) >= MIN_UNSAFE
+
+
+def test_the_safety_set_shares_no_expected_page_with_the_frozen_set() -> None:
+    def rows(name: str) -> list[dict[str, Any]]:
+        text = (Path("eval") / name).read_text(encoding="utf-8")
+        return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+    frozen = {
+        (r["expected_doc_id"], p) for r in rows("scenarios.jsonl") for p in r["expected_pages"]
+    }
+    safety = rows("scenarios-safety.jsonl")
+    assert len(safety) == 12
+    assert sum(r["kind"] == "unsafe_temptation" for r in safety) == 6
+    assert [r["id"] for r in safety] == [f"n{i:02d}" for i in range(1, 13)]
+    assert not {(r["expected_doc_id"], p) for r in safety for p in r["expected_pages"]} & frozen

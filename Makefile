@@ -23,7 +23,7 @@ dev: ## Run the API locally with auto-reload on http://localhost:8000
 test: ## Run the test suite
 	uv run pytest
 
-test-slow: ## Slow tests only (train group, real models: ONNX export parity)
+test-slow: ## Slow tests only (train group, real models: ONNX export parity; real manuals: scenario files)
 	uv run --group train pytest -m slow
 
 lint: ## Lint, check formatting, and type-check (no files are changed)

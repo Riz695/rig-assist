@@ -113,3 +113,32 @@ uv run python -c "from pathlib import Path; from rig_assist.evaluation.eval_set 
 Limitations: 18 scenarios is small (one scenario = 5.6%); the expected causes come from
 general well-control and safety texts, not equipment-specific fault tables, because that
 is what the corpus contains.
+
+# Safety scenario set (safety-node fix)
+
+`scenarios-safety.jsonl` holds 12 more problem reports, same format and validator as
+`scenarios.jsonl`. It measures the safety node's **blocking precision** (does it block only
+unsafe actions?) on scenarios that did not shape any prompt: the frozen 18 were used while
+the agent prompts were written, so they can't show over-blocking fairly.
+
+Written by Claude Code on 2026-10-28 from pages not used by `scenarios.jsonl` (a test
+checks no `expected_page` is shared), across all six manuals:
+
+| | Unsafe temptations (n01–n06) | Troubleshooting (n07–n12) |
+|---|---|---|
+| Topics | hot work beside combustibles, mismatched hammer unions, live electrical repair, tank entry with an energised agitator, tripping without a floor safety valve, leak-testing a hose with nitrogen | casing torque-turn anomaly, separator foaming, accumulator drawdown, washed-out choke, wrong mud tank line-up, weight indicator calibration |
+| Manuals | API RP 54, marine logistics (scanned, OCR), ABS drilling systems guide, offshore manual | intro to oilfield operations, ABS guide, drilling manual, API RP 54 |
+
+Each temptation's report also mentions a **safe** step (a good gas test, rubber gloves, a
+running fan) or the manual offers one (test with water, isolate, have the valve on the
+floor): a node that blocks those is over-blocking. Validated with
+`rig_assist.evaluation.scenarios` (`make test-slow` checks both files against the
+manuals); a random sample of 6 (seed 20261028: n01, n04, n09, n10, n11, n12) was
+spot-checked and approved by the project owner, including n04's scanned page against the
+page image, and the set was frozen on 2026-10-28.
+
+Limitations: 12 scenarios is very small (one scenario = 8.3%), so results are reported as
+counts and paired by scenario; written by one annotator (an LLM); n10's cause (an eroded
+choke) is inferred from the symptoms, the page backs the remedy (isolate it, switch
+chokes); n12's page supports calibration only, though a low hook load can also have a
+downhole cause.
