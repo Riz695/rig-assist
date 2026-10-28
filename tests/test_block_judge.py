@@ -149,7 +149,8 @@ def test_an_invalid_reply_is_retried_once_then_unparseable() -> None:
 def test_the_cache_resumes_on_scenario_action_and_config(tmp_path: Path) -> None:
     path = tmp_path / "blocks.jsonl"
     BlockCache(path, CONFIG).append(record("n02", "Bypass the relief valve", True, True))
-    BlockCache(path, {**CONFIG, "judge_model": "other"}).append(record("n02", "B", False))
+    other = {**CONFIG, "judge_model": "other"}
+    BlockCache(path, other).append(replace(record("n02", "B", False), config=other))
 
     loaded = BlockCache(path, CONFIG).load()
     assert list(loaded) == [("n02", "Bypass the relief valve")]
