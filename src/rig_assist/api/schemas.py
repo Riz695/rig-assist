@@ -15,6 +15,12 @@ class HealthResponse(BaseModel):
     version: str = Field(description="Installed rig-assist version.", examples=["0.1.0"])
 
 
+class ReadyResponse(BaseModel):
+    status: Literal["ready"] = Field(description="'ready' when the API can answer searches.")
+    chunks: int = Field(description="Chunks in the BM25 index.", examples=[1316])
+    vectors: int = Field(description="Vectors in the Qdrant collection.", examples=[1316])
+
+
 class DocumentResponse(BaseModel):
     doc_id: str = Field(description="Stable ID used in citations.", examples=["drilling-manual"])
     title: str = Field(examples=["Drilling Manual"])

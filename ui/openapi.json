@@ -28,6 +28,31 @@
         }
       }
     },
+    "/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Readiness check",
+        "description": "Return 200 only when the API can answer the default search mode: the BM25 index is\nloaded and Qdrant answers with vectors in the collection. The platform's readiness probe\nkeeps traffic away until then (e.g. while Qdrant restores its snapshot).",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready: nothing indexed, or Qdrant down or empty."
+          }
+        }
+      }
+    },
     "/documents": {
       "get": {
         "tags": [
@@ -1053,6 +1078,39 @@
           "cost_usd"
         ],
         "title": "JobUsage"
+      },
+      "ReadyResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ready",
+            "title": "Status",
+            "description": "'ready' when the API can answer searches."
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks",
+            "description": "Chunks in the BM25 index.",
+            "examples": [
+              1316
+            ]
+          },
+          "vectors": {
+            "type": "integer",
+            "title": "Vectors",
+            "description": "Vectors in the Qdrant collection.",
+            "examples": [
+              1316
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "chunks",
+          "vectors"
+        ],
+        "title": "ReadyResponse"
       },
       "SearchHit": {
         "properties": {
