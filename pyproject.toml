@@ -82,6 +82,7 @@ known-first-party = ["rig_assist"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # tests import the laptop scripts in scripts/
 addopts = "-ra --strict-markers -m 'not slow'"  # slow tests: `make test-slow`
 markers = [
     "slow: needs the train group and real models (ONNX export parity) or the real manuals (scenario files, about a minute); not in `make test` or CI",
