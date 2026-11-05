@@ -54,6 +54,13 @@ def test_blobs_under_the_prefix_land_under_dest_keeping_subfolders(tmp_path: Pat
     assert not (tmp_path / "index/x.pdf").exists()
 
 
+def test_fetched_files_are_readable_by_other_users(tmp_path: Path) -> None:
+    # The init container runs as uid 10001; Qdrant reads its snapshot as uid 1000.
+    fetch_prefix(FakeSource(BLOBS), "index/", tmp_path)
+
+    assert (tmp_path / "bm25.pkl").stat().st_mode & 0o777 == 0o644
+
+
 def test_an_unchanged_file_is_skipped(tmp_path: Path) -> None:
     fetch_prefix(FakeSource(BLOBS), "index/", tmp_path)
     source = FakeSource(BLOBS)
