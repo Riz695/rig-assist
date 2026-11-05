@@ -39,12 +39,17 @@ fi
 principal_id="$(az ad sp show --id "$app_id" --query id -o tsv)"
 
 repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+# GitHub decides the token's subject: a repo can use immutable ids instead of owner/name.
+subject_prefix="$(gh api "repos/$repo/actions/oidc/customization/sub" -q .sub_claim_prefix)"
 for branch in "${BRANCHES[@]}"; do
+    parameters="{\"name\": \"github-$branch\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"$subject_prefix:ref:refs/heads/$branch\", \"audiences\": [\"api://AzureADTokenExchange\"]}"
     existing="$(az ad app federated-credential list --id "$app_id" \
         --query "[?name=='github-$branch'] | length(@)" -o tsv)"
     if [ "$existing" = 0 ]; then
-        az ad app federated-credential create --id "$app_id" --output none --parameters \
-            "{\"name\": \"github-$branch\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:$repo:ref:refs/heads/$branch\", \"audiences\": [\"api://AzureADTokenExchange\"]}"
+        az ad app federated-credential create --id "$app_id" --output none --parameters "$parameters"
+    else
+        az ad app federated-credential update --id "$app_id" --output none \
+            --federated-credential-id "github-$branch" --parameters "$parameters"
     fi
 done
 
