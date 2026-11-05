@@ -1,6 +1,6 @@
 # Deploying Rig Assist to Azure
 
-> **Status (2026-11-05):** nothing here has been run on Azure yet. The scripts were tested with fake `az`, `gh` and `docker` commands, and the Bicep only compiled and linted.
+> **Status (2026-11-05):** first real run in progress on a pay-as-you-go subscription, because the free trial was refused. A pay-as-you-go subscription has no spending cap, so set a budget alert first and run `make azure-teardown` when you finish.
 
 Rig Assist runs on Azure Container Apps on a free-trial subscription, reachable only from your
 own IP address. Everything lives in one resource group, so teardown is one step. The
