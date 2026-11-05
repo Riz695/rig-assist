@@ -8,10 +8,6 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
-  # Pre-merge testing, removed once the merge is verified: the triggers around it only
-  # work for a workflow file already on main.
-  push:
-    branches: [phase-8-azure]
   workflow_dispatch:
 
 # One deploy at a time, and never cancelled halfway: it holds an app at one replica.

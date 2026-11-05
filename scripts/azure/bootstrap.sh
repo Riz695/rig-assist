@@ -3,7 +3,7 @@
 # rights to fill them, and the GitHub identity deploys sign in with. Safe to rerun.
 source "$(dirname "$0")/common.sh"
 
-BRANCHES=(main phase-8-azure)  # the branch credential is deleted once the merge is verified
+BRANCHES=(main)  # add a branch here to test deploys before merging
 PROVIDERS=(Microsoft.App Microsoft.ContainerRegistry Microsoft.KeyVault Microsoft.ManagedIdentity
     Microsoft.OperationalInsights Microsoft.Storage)
 

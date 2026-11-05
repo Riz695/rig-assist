@@ -188,7 +188,7 @@ v2 adds:
 
 ## Limitations and future work
 
-- **No public URL.** The Azure deployment ([`infra/`](infra/), [`docs/deployment.md`](docs/deployment.md)) ran for a one-day test on 2026-11-05: Search, Ask and Diagnose through Azure, OIDC deploys, and a foreign IP refused with 403. It is private and temporary by design, because a pay-as-you-go subscription has no spending cap. On 1.25 vCPU, `hybrid_rerank` took about 4.3 s, and `/ask` about 6.4 s.
+- **No public URL.** The Azure deployment ([`infra/`](infra/), [`docs/deployment.md`](docs/deployment.md)) ran for a one-day test on 2026-11-05: Search, Ask and Diagnose through Azure, OIDC deploys, and a foreign IP refused with 403. It is private and temporary by design, because a pay-as-you-go subscription has no spending cap. [Evidence and what the real run found](docs/azure-evidence.md). On 1.25 vCPU, `hybrid_rerank` took about 4.3 s, and `/ask` about 6.4 s.
 - **Small eval sets.** 47 questions and 18 + 12 scenarios, written by an LLM with a single annotator. They show large effects only.
 - **Self-judging.** The LLM judge is the model under test, which is why the safety blocks were also audited by hand.
 - **One model and setup.** Agent results hold for this LLM with thinking off, and generation isn't deterministic: `/ask` moved by a couple of scenarios between runs of unchanged code.

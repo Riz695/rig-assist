@@ -1,6 +1,6 @@
 # Deploying Rig Assist to Azure
 
-> **Status (2026-11-05):** tested on real Azure on a pay-as-you-go subscription, because the free trial was refused. A pay-as-you-go subscription has no spending cap, so set a budget alert first and run `make azure-teardown` when you finish. The prerequisites and cost notes below still describe the free-trial plan.
+> **Status (2026-11-05):** tested on real Azure for one day on a pay-as-you-go subscription, because the free trial was refused, then deleted with `make azure-teardown`. See [the evidence](azure-evidence.md). A pay-as-you-go subscription has no spending cap, so set a budget alert first and tear down when you finish. The prerequisites below still describe the free-trial plan.
 
 Rig Assist runs on Azure Container Apps on a free-trial subscription, reachable only from your
 own IP address. Everything lives in one resource group, so teardown is one step. The
