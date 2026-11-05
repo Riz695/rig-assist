@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash  # nvm (for the UI's Node) only works in bash
 .DEFAULT_GOAL := help
-.PHONY: help install dev test test-slow lint format ui-install ui-types ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents eval-safety pairs negatives train export export-base mlflow-ui up down
+.PHONY: help install dev test test-slow lint format ui-install ui-types ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents eval-safety pairs negatives train export export-base mlflow-ui up down infra-lint
 
 help: ## List available targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -100,6 +100,10 @@ export-base: ## The base embedder exported like a fine-tuned one (fp32), for mak
 
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db
+
+infra-lint: ## Compile and lint the Bicep infrastructure; any warning fails
+	az bicep build --file infra/main.bicep --stdout > /dev/null
+	@out=$$(az bicep lint --file infra/main.bicep 2>&1) && ! grep -q Warning <<< "$$out" || { echo "$$out"; exit 1; }
 
 up: ## Build and start the stack in the background (demo on http://localhost:8080, API docs on :8000/docs)
 	docker compose up --build --detach

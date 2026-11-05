@@ -67,6 +67,14 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  infra:
+    # The Bicep compiles and lints clean, so infrastructure errors fail before any deploy.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: az bicep install --version v0.48.1
+      - run: make infra-lint
+
   docker:
     # Build the API and UI images; check both containers start, answer their health checks,
     # run as non-root, and that the UI's nginx forwards /api to the API.
