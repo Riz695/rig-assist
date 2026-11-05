@@ -6,6 +6,8 @@ Rig Assist is a troubleshooting assistant for oil and gas equipment. A technicia
 
 ![The Search tab: a query about mud pump pressure, with ranked manual excerpts, page numbers and scores](docs/images/search.png)
 
+**[Watch the 90-second demo](https://youtu.be/UFCYYPBq30U):** Search, Ask, and Diagnose with live agent progress and a blocked unsafe action.
+
 > **Not a safety-certified system.** This is a portfolio project. Check every answer against the cited manual pages, and follow site procedures and your permit-to-work system. The API includes this warning in `/ask` and `/diagnose` responses, and the UI always shows it.
 
 ## Architecture
