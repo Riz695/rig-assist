@@ -31,6 +31,7 @@ services:
       - "8080:8080"
     environment:
       API_UPSTREAM: http://api:8000
+      API_HOST: api:8000
     depends_on:
       api:
         condition: service_healthy

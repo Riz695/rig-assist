@@ -24,6 +24,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness check
+         * @description Return 200 only when the API can answer the default search mode: the BM25 index is
+         *     loaded and Qdrant answers with vectors in the collection. The platform's readiness probe
+         *     keeps traffic away until then (e.g. while Qdrant restores its snapshot).
+         */
+        get: operations["ready_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents": {
         parameters: {
             query?: never;
@@ -478,6 +500,27 @@ export interface components {
              */
             cost_usd: number | null;
         };
+        /** ReadyResponse */
+        ReadyResponse: {
+            /**
+             * Status
+             * @description 'ready' when the API can answer searches.
+             * @constant
+             */
+            status: "ready";
+            /**
+             * Chunks
+             * @description Chunks in the BM25 index.
+             * @example 1316
+             */
+            chunks: number;
+            /**
+             * Vectors
+             * @description Vectors in the Qdrant collection.
+             * @example 1316
+             */
+            vectors: number;
+        };
         /** SearchHit */
         SearchHit: {
             /**
@@ -628,6 +671,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
                 };
+            };
+        };
+    };
+    ready_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadyResponse"];
+                };
+            };
+            /** @description Not ready: nothing indexed, or Qdrant down or empty. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

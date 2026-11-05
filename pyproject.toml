@@ -7,6 +7,8 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "azure-identity==1.26.0",
+    "azure-storage-blob==12.31.0",
     "fastapi>=0.156.4",
     "fastembed>=0.9.0",
     "langfuse==4.17.0",
@@ -76,10 +78,11 @@ extend-exclude = ["*.md"]
 select = ["E", "W", "F", "I", "B", "UP", "SIM"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["rig_assist"]
+known-first-party = ["rig_assist", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # tests import the laptop scripts in scripts/
 addopts = "-ra --strict-markers -m 'not slow'"  # slow tests: `make test-slow`
 markers = [
     "slow: needs the train group and real models (ONNX export parity) or the real manuals (scenario files, about a minute); not in `make test` or CI",

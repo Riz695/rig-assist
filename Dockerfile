@@ -32,6 +32,18 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken
 RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
+# 4. Same for the served embedding and reranker models (names from Settings, one source of
+#    truth): a cold start on Azure must not depend on Hugging Face being up. score() forces
+#    the reranker to load, which is what downloads it.
+RUN MODELS_DIR=/app/models /app/.venv/bin/python -c "\
+from rig_assist.config import Settings; \
+from rig_assist.retrieval.embedder import load_text_embedding; \
+from rig_assist.retrieval.rerank import FastEmbedCrossEncoder; \
+s = Settings(_env_file=None); \
+load_text_embedding(s.embedding_model, str(s.models_dir)); \
+FastEmbedCrossEncoder(s.reranker_model, str(s.models_dir)).score('ok', ['ok'])" \
+    && chmod -R a+rX /app/models  # Hugging Face writes some cache files as owner-only
+
 # ---- runtime ---------------------------------------------------------------
 FROM python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
 
@@ -42,12 +54,14 @@ RUN groupadd --system --gid 10001 app \
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/tiktoken /app/tiktoken
+COPY --from=builder /app/models /app/models
 
 # Data lives in /app/data (a volume in docker compose); settings resolve data/... from /app.
 RUN mkdir -p /app/data && chown app:app /app/data
 
 ENV PATH="/app/.venv/bin:$PATH" \
     TIKTOKEN_CACHE_DIR=/app/tiktoken \
+    MODELS_DIR=/app/models \
     PYTHONUNBUFFERED=1
 
 USER app

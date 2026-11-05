@@ -3,10 +3,10 @@
 
 SHELL := /bin/bash  # nvm (for the UI's Node) only works in bash
 .DEFAULT_GOAL := help
-.PHONY: help install dev test test-slow lint format ui-install ui-types ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents eval-safety pairs negatives train export export-base mlflow-ui up down
+.PHONY: help install dev test test-slow lint format ui-install ui-types ui-dev ui-test ui-lint ui-build ingest ingest-olmocr ingest-v1 eval eval-answers eval-agents eval-safety pairs negatives train export export-base mlflow-ui up down infra-lint azure-bootstrap azure-publish-data azure-secrets azure-apps azure-session-start azure-session-stop azure-teardown
 
 help: ## List available targets
-	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
+	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-19s %s\n", $$1, $$2}'
 
 # The UI (ui/, React + TypeScript) uses Node from nvm when nvm is installed (a plain
 # `make` shell doesn't load ~/.bashrc); otherwise the node on PATH (CI: setup-node).
@@ -100,6 +100,34 @@ export-base: ## The base embedder exported like a fine-tuned one (fp32), for mak
 
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db
+
+infra-lint: ## Compile and lint the Bicep, the Azure scripts and the workflows; any warning fails
+	az bicep build --file infra/main.bicep --stdout > /dev/null
+	@out=$$(az bicep lint --file infra/main.bicep 2>&1) && ! grep -q Warning <<< "$$out" || { echo "$$out"; exit 1; }
+	uvx --from shellcheck-py==0.11.0.1 shellcheck -x -P SCRIPTDIR scripts/azure/*.sh
+	uvx --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint .github/workflows/*.yml
+
+# Azure (docs/deployment.md has the order). RG=... and LOCATION=... override the defaults.
+azure-bootstrap: ## Azure stage 1: resource group, supporting resources, GitHub identity and variables
+	bash scripts/azure/bootstrap.sh
+
+azure-publish-data: ## Copy the index, manuals and a Qdrant snapshot to Blob (needs make up)
+	bash scripts/azure/publish_data.sh
+
+azure-secrets: ## Write the keys from .env to Key Vault; prints fingerprints only
+	source scripts/azure/common.sh && uv run python scripts/azure/set_secrets.py --vault "$$(output keyVaultName)"
+
+azure-apps: ## Azure stage 2: build and push this commit's images, deploy the apps
+	bash scripts/azure/deploy_apps.sh
+
+azure-session-start: ## Point the API at the LLM pod and wait for /ready: make azure-session-start BASE_URL=...
+	bash scripts/azure/session.sh start "$(BASE_URL)"
+
+azure-session-stop: ## Clear the LLM URL and let the API scale back to zero
+	bash scripts/azure/session.sh stop
+
+azure-teardown: ## Delete everything on Azure, then verify it's gone (asks first)
+	bash scripts/azure/teardown.sh
 
 up: ## Build and start the stack in the background (demo on http://localhost:8080, API docs on :8000/docs)
 	docker compose up --build --detach
