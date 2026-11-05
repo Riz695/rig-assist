@@ -199,6 +199,8 @@ def test_the_cli_reports_each_map(capsys): ...
 
 ### Task 7: First deployment and acceptance checks (live; stop before billable steps)
 
+> **Note (2026-11-05):** the user opened the Phase 8 PR as code only, because the Azure sign-up is blocked. Tasks 7 and 8 are still pending. Task 7 Step 5 no longer opens the PR; when the live work resumes, it goes on a new PR.
+
 **Files:**
 - Modify: `PROGRESS.md` (accounts, resource names, costs), `docs/deployment.md` (anything that differed)
 

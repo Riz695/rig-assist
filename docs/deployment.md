@@ -1,5 +1,7 @@
 # Deploying Rig Assist to Azure
 
+> **Status (2026-11-05):** nothing here has been run on Azure yet. The scripts were tested with fake `az`, `gh` and `docker` commands, and the Bicep only compiled and linted.
+
 Rig Assist runs on Azure Container Apps on a free-trial subscription, reachable only from your
 own IP address. Everything lives in one resource group, so teardown is one step. The
 infrastructure is in `infra/` (see `infra/README.md`), the laptop scripts in `scripts/azure/`.
