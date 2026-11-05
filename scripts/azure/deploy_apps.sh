@@ -25,6 +25,6 @@ az acr login -n "$(output registryName)" --expose-token --query accessToken -o t
 registry_docker push "$api_image"
 registry_docker push "$ui_image"
 
-deploy apps deployApps=true apiImage="$api_image" uiImage="$ui_image"
+deploy stage2 deployApps=true apiImage="$api_image" uiImage="$ui_image"
 echo "apps deployed: https://$(az containerapp show -n "$(output uiAppName)" -g "$RG" \
     --query properties.configuration.ingress.fqdn -o tsv)"
