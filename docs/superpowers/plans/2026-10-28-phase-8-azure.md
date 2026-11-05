@@ -156,6 +156,8 @@ def test_the_cli_reports_each_map(capsys): ...
 
 > Correction from Task 4: apps can't start before their images, secrets and data exist, and those need the registry, vault and storage first. So deployment has two stages: `main.bicep` with `deployApps=false` (supporting resources), then images, `publish_data.sh`, `set_secrets.py`, then `main.bicep` with `deployApps=true`. The snapshot must be uploaded as `qdrant/rig_assist_chunks.snapshot`. Teardown must also purge the soft-deleted Key Vault, or its name stays taken for 7 days. Use `docker build` + `docker push`, not `az acr build`: Microsoft Q&A reports ACR Tasks refused on trial credits (`TasksOperationsNotAllowed`).
 
+> Correction from Task 5: the stages are `make azure-bootstrap` (stage 1), `make azure-publish-data`, `make azure-secrets`, then `make azure-apps` (new: `scripts/azure/deploy_apps.sh`, images + stage 2). `common.sh` holds the shared helpers; `RG` and `LOCATION` are environment variables, not arguments. The user also gets Key Vault Secrets Officer on the vault (Owner has no access to secret contents). `publish_data.sh` uploads only `data/index/chunks` and `documents`, not the eval baselines and variants. Task 7 step 2 follows this order.
+
 **Files:**
 - Create: `scripts/azure/{publish_data.sh,bootstrap.sh,set_secrets.py,session.sh,teardown.sh}`, `docs/deployment.md`
 - Modify: `Makefile` (`azure-bootstrap`, `azure-publish-data`, `azure-secrets`, `azure-session-start`, `azure-session-stop`, `azure-teardown`, all documented in `make help`)
