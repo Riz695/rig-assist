@@ -101,10 +101,11 @@ export-base: ## The base embedder exported like a fine-tuned one (fp32), for mak
 mlflow-ui: ## Browse logged eval runs on http://localhost:5000
 	uv run --group eval mlflow ui --backend-store-uri sqlite:///data/mlflow/mlflow.db
 
-infra-lint: ## Compile and lint the Bicep and the Azure scripts; any warning fails
+infra-lint: ## Compile and lint the Bicep, the Azure scripts and the workflows; any warning fails
 	az bicep build --file infra/main.bicep --stdout > /dev/null
 	@out=$$(az bicep lint --file infra/main.bicep 2>&1) && ! grep -q Warning <<< "$$out" || { echo "$$out"; exit 1; }
 	uvx --from shellcheck-py==0.11.0.1 shellcheck -x -P SCRIPTDIR scripts/azure/*.sh
+	uvx --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint .github/workflows/*.yml
 
 # Azure (docs/deployment.md has the order). RG=... and LOCATION=... override the defaults.
 azure-bootstrap: ## Azure stage 1: resource group, supporting resources, GitHub identity and variables

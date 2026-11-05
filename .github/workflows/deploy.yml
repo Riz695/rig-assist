@@ -1,0 +1,70 @@
+name: deploy
+
+# Swaps image tags only: the Bicep is applied from the laptop (docs/deployment.md). Off unless the
+# repo variable AZURE_DEPLOY_ENABLED is true, so with no Azure every run is skipped, not failed.
+on:
+  # After CI passes for a push to main. GitHub reads this trigger from the file on main only.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Pre-merge testing, removed once the merge is verified: the triggers around it only
+  # work for a workflow file already on main.
+  push:
+    branches: [phase-8-azure]
+  workflow_dispatch:
+
+# One deploy at a time, and never cancelled halfway: it holds an app at one replica.
+concurrency:
+  group: deploy
+
+jobs:
+  deploy:
+    # `branches: [main]` above only compares the branch name, and CI also runs on pull requests,
+    # so a fork's branch called main would match. A workflow_run has this repo's rights, so it
+    # must come from a push to this repo, never a pull request.
+    if: >-
+      vars.AZURE_DEPLOY_ENABLED == 'true' && (github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets azure/login swap GitHub's token for an Azure one; no stored password
+    env:
+      # workflow_run's own SHA is main's latest, not necessarily the commit CI checked.
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      API_APP: ${{ vars.API_APP }}
+      UI_APP: ${{ vars.UI_APP }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push the images
+        run: |
+          az acr login --name "$ACR_NAME" --only-show-errors
+          docker build -t "$ACR_NAME.azurecr.io/rig-assist-api:$SHA" .
+          docker build -t "$ACR_NAME.azurecr.io/rig-assist-ui:$SHA" ui
+          docker push "$ACR_NAME.azurecr.io/rig-assist-api:$SHA"
+          docker push "$ACR_NAME.azurecr.io/rig-assist-ui:$SHA"
+      - name: Swap the API, then the UI, each waiting for its probes
+        run: |
+          bash scripts/azure/swap_image.sh "$API_APP" api "$ACR_NAME.azurecr.io/rig-assist-api:$SHA"
+          bash scripts/azure/swap_image.sh "$UI_APP" ui "$ACR_NAME.azurecr.io/rig-assist-ui:$SHA"
+      - name: A foreign IP is refused
+        # The runner can't reach the site, which proves the restriction survived. Live checks
+        # happen from the laptop; the URL stays out of this public log.
+        run: |
+          fqdn="$(az containerapp show -n "$UI_APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)"
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "https://$fqdn")"
+          echo "the runner got HTTP $code"
+          test "$code" = 403

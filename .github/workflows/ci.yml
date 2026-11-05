@@ -68,7 +68,7 @@ jobs:
       - run: npm run build
 
   infra:
-    # The Bicep and the Azure scripts lint clean, so infrastructure errors fail before any deploy.
+    # The Bicep, Azure scripts and workflows lint clean, so errors fail before any deploy.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

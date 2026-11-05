@@ -65,6 +65,11 @@ A push to `main` runs `.github/workflows/deploy.yml` after CI passes, only while
 variable `AZURE_DEPLOY_ENABLED` is `true`; otherwise the job is skipped, never failed. It signs
 in with OIDC (no stored password), pushes new images and swaps the tags.
 
+Each swap holds the app at one replica until the new revision passes its probes, then restores
+the previous setting, because at zero replicas a revision can report success without starting.
+A failed deploy prints revision states only: Actions logs are public and app logs hold your IP,
+so read those from the laptop with `az containerapp logs show`.
+
 CI/CD never applies the Bicep. That needs rights to create role assignments, which the GitHub
 identity should not hold, and it would reset your IP allowlist and session settings. After an
 infrastructure change, run `make azure-apps` from the laptop, outside a session.
