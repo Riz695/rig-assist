@@ -19,7 +19,7 @@ lints it (`make infra-lint`). Setup steps are in `docs/deployment.md`.
 | `apiMinReplicas` | `0` | `1` keeps the API warm during a session |
 
 Outputs: `uiUrl`, `registryLoginServer`, `registryName`, `storageAccountName`, `keyVaultName`,
-`apiAppName`, `uiAppName`, `identityClientId`.
+`apiAppName`, `uiAppName`, `identityClientId`, `dataContainer`.
 
 ## Modules
 

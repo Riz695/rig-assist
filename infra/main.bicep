@@ -125,3 +125,4 @@ output keyVaultName string = keyvault.outputs.name
 output apiAppName string = '${namePrefix}-api'
 output uiAppName string = '${namePrefix}-ui'
 output identityClientId string = identity.outputs.clientId
+output dataContainer string = dataContainer
