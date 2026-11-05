@@ -10,11 +10,20 @@ server="$(output registryLoginServer)"
 api_image="$server/rig-assist-api:$tag"
 ui_image="$server/rig-assist-ui:$tag"
 
-az acr login -n "$(output registryName)" --only-show-errors
 docker build -t "$api_image" .
 docker build -t "$ui_image" ui
-docker push "$api_image"
-docker push "$ui_image"
+
+# Push from a throwaway Docker config: `az acr login` needs the desktop credential store, which
+# can be locked behind a GPG passphrase. The token lasts about 3 hours and is never printed.
+docker_config="$(mktemp -d)"
+trap 'rm -rf "$docker_config"' EXIT
+docker_host="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+registry_docker() { docker --config "$docker_config" -H "$docker_host" "$@"; }
+az acr login -n "$(output registryName)" --expose-token --query accessToken -o tsv \
+    --only-show-errors \
+    | registry_docker login "$server" -u 00000000-0000-0000-0000-000000000000 --password-stdin
+registry_docker push "$api_image"
+registry_docker push "$ui_image"
 
 deploy apps deployApps=true apiImage="$api_image" uiImage="$ui_image"
 echo "apps deployed: https://$(az containerapp show -n "$(output uiAppName)" -g "$RG" \
