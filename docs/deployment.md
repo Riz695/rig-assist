@@ -1,6 +1,6 @@
 # Deploying Rig Assist to Azure
 
-> **Status (2026-11-05):** first real run in progress on a pay-as-you-go subscription, because the free trial was refused. A pay-as-you-go subscription has no spending cap, so set a budget alert first and run `make azure-teardown` when you finish.
+> **Status (2026-11-05):** tested on real Azure on a pay-as-you-go subscription, because the free trial was refused. A pay-as-you-go subscription has no spending cap, so set a budget alert first and run `make azure-teardown` when you finish. The prerequisites and cost notes below still describe the free-trial plan.
 
 Rig Assist runs on Azure Container Apps on a free-trial subscription, reachable only from your
 own IP address. Everything lives in one resource group, so teardown is one step. The
@@ -97,6 +97,7 @@ cost view shows nothing still running.
   about $5/month, which was not calculated with the always-on `qdrant` replica. Price it with
   the Azure pricing calculator before redeploying on a paid subscription.
 - **LLM:** the RunPod pod, about $1 in total for the checks and the recording.
+- **Pay-as-you-go (calculated 2026-11-05, `southeastasia`, not a bill):** about $18-52/month if left running, and under $1 for a one-day test. The registry is $0.1666/day, and `qdrant` is $13.39 (idle) to $46.87 (active) a month after the monthly free grant.
 
 ## Choices that differ from `PLAN.md`
 
