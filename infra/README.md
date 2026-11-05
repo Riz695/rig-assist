@@ -55,6 +55,6 @@ Qdrant's `--snapshot` option is given).
 - **Qdrant sets `command` as well as `args`:** Container Apps' `args` replace the image's CMD,
   which is what starts Qdrant.
 - **Init containers count toward the replica's CPU and memory**, and the total must be a valid
-  Consumption pair: `qdrant` 0.75 vCPU / 1.5 GiB, `api` 1.25 vCPU / 2.5 GiB.
+  Consumption pair: `qdrant` 0.75 vCPU / 1.5 GiB, `api` 1.5 vCPU / 3 GiB.
 - **`Microsoft.Storage` API `2026-04-01`,** not the newest GA (`2026-09-01`): Bicep 0.48.1 has
   no types for the newer one, so it couldn't validate the properties.

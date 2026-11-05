@@ -225,8 +225,9 @@ resource api 'Microsoft.App/containerApps@2026-07-01' = {
             }
           ]
           resources: {
-            cpu: json('1')
-            memory: '2Gi'
+            // 2 GiB was killed with exit 137 under repeated /diagnose jobs on Azure.
+            cpu: json('1.25')
+            memory: '2.5Gi'
           }
           volumeMounts: [
             {

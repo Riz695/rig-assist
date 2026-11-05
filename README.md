@@ -188,7 +188,7 @@ v2 adds:
 
 ## Limitations and future work
 
-- **Not deployed yet.** The Azure code (Bicep, scripts, OIDC deploy workflow) is in [`infra/`](infra/) and [`docs/deployment.md`](docs/deployment.md), but it has **never run on Azure**: Bicep is compiled and linted, and the scripts ran against fake `az`, `gh` and `docker` commands. Latency on Azure's CPUs is unmeasured.
+- **No public URL.** The Azure deployment ([`infra/`](infra/), [`docs/deployment.md`](docs/deployment.md)) ran for a one-day test on 2026-11-05: Search, Ask and Diagnose through Azure, OIDC deploys, and a foreign IP refused with 403. It is private and temporary by design, because a pay-as-you-go subscription has no spending cap. On 1.25 vCPU, `hybrid_rerank` took about 4.3 s, and `/ask` about 6.4 s.
 - **Small eval sets.** 47 questions and 18 + 12 scenarios, written by an LLM with a single annotator. They show large effects only.
 - **Self-judging.** The LLM judge is the model under test, which is why the safety blocks were also audited by hand.
 - **One model and setup.** Agent results hold for this LLM with thinking off, and generation isn't deterministic: `/ask` moved by a couple of scenarios between runs of unchanged code.
