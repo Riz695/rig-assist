@@ -19,9 +19,11 @@ RUN npm run build
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
 
 # Where the API is, from inside the network (compose service name; another host on Azure).
+# API_HOST is the Host header sent to it.
 # NGINX_ENTRYPOINT_LOCAL_RESOLVERS makes the image read the DNS server from
 # /etc/resolv.conf into NGINX_LOCAL_RESOLVERS, which the template's `resolver` uses.
 ENV API_UPSTREAM=http://api:8000 \
+    API_HOST=api:8000 \
     NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
