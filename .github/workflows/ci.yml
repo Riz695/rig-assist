@@ -92,7 +92,7 @@ jobs:
       - name: Start the API and wait for /health
         run: |
           docker run -d --name api --network rig -p 8000:8000 rig-assist-api:ci
-          for i in $(seq 30); do
+          for _ in $(seq 30); do
             if curl -fsS http://localhost:8000/health; then exit 0; fi
             sleep 1
           done
@@ -101,7 +101,7 @@ jobs:
       - name: Start the UI and wait for /healthz
         run: |
           docker run -d --name ui --network rig -p 8080:8080 -e API_HOST=api:8000 rig-assist-ui:ci
-          for i in $(seq 30); do
+          for _ in $(seq 30); do
             if curl -fsS http://localhost:8080/healthz; then exit 0; fi
             sleep 1
           done
