@@ -33,5 +33,6 @@ check "no soft-deleted Key Vault in the subscription" \
     "$(az keyvault list-deleted --resource-type vault --query 'length(@)' -o tsv)" 0
 check "app registration $GITHUB_APP gone" \
     "$(az ad app list --display-name "$GITHUB_APP" --query 'length(@)' -o tsv)" 0
-check "deploys switched off" "$(gh variable get AZURE_DEPLOY_ENABLED)" false
+check "deploys switched off" \
+    "$(gh variable list --json name,value -q '.[] | select(.name == "AZURE_DEPLOY_ENABLED") | .value')" false
 exit "$failed"
