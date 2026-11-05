@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 from pydantic import SecretStr
-from scripts.azure.set_secrets import MissingSecrets, collect, fingerprint, main, write_secret
 
 from rig_assist.config import Settings
+from scripts.azure.set_secrets import MissingSecrets, collect, fingerprint, main, write_secret
 
 LLM_KEY = "llm-value-do-not-print"
 PUBLIC_KEY = "pk-lf-value-do-not-print"
