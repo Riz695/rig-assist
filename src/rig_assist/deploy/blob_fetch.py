@@ -103,6 +103,7 @@ def fetch_prefix(source: BlobSource, prefix: str, dest: Path) -> FetchReport:
         os.close(fd)
         try:
             source.download(blob.name, Path(tmp))
+            os.chmod(tmp, 0o644)  # mkstemp makes it owner-only; Qdrant runs as another uid
             os.replace(tmp, path)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
